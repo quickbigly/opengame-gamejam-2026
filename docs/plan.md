@@ -15,13 +15,13 @@ Each milestone ends with something playable. Anything not done by its date gets 
 ## M1: Core Loop (Nov 21–25)
 
 - [x] Grid model: open and filled cells, flood-fill regions, region areas (`scripts/core/grid.gd`).
-- [ ] Balls: diagonal movement on a fixed 120 Hz step, swept collision against cells.
-- [ ] Walls: click to build, switch direction, two halves, breaking on a ball hit, solidifying.
-- [ ] Capture: fill regions with no balls in them.
-- [ ] Squeeze: pen limit, pen meters, locking, stage clear.
-- [ ] Lives and game over.
-- [ ] Tests for flood fill, capture, pen locking and wall collision.
-- **Exit:** one stage is playable from start to clear or to game over.
+- [x] Balls: diagonal movement on a fixed 120 Hz step, swept collision against cells.
+- [x] Walls: click to build, switch direction, two halves, breaking on a ball hit, solidifying.
+- [x] Capture: fill regions with no balls in them.
+- [x] Squeeze: pen limit, pen meters, locking, stage clear.
+- [x] Lives and game over.
+- [x] Tests for flood fill, capture, pen locking and wall collision.
+- **Exit:** one stage is playable from start to clear or to game over. Done: `scripts/core/` (Grid, Ball, WallHalf, Board) and `scenes/game/field.gd`; try other stages with `dev --balls=3 --limit=0.11 --seed=42`.
 
 ## M2: Run and Upgrades (Nov 26–30)
 
