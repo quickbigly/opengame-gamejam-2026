@@ -8,13 +8,13 @@ Each milestone ends with something playable. Anything not done by its date gets 
 
 - [x] Godot 4.7.2 project: Compatibility renderer, 1280×720, `canvas_items` stretch.
 - [x] Fetch the 4.7.2 web export templates into `.tools` (`dev -Setup`). Add a single-threaded "Web" export preset that writes `build/web/index.html`.
-- [x] Export a placeholder scene from the command line (`dev -Web`). Still to do: open it in a browser (`opengame dev .`).
+- [x] Export a placeholder scene from the command line (`dev -Web`). Still to do: open it in a browser. `opengame dev` (CLI 0.13.5) refuses to run on Windows (`filesystem_unsupported`), so serve it with `python -m http.server 5180 --directory build/web` instead.
 - [x] `opengame check --build --json` passes on the placeholder. Ask before any deploy.
 - [x] Headless test runner (`dev -Test`).
 
 ## M1: Core Loop (Nov 21–25)
 
-- [ ] Grid model: open and filled cells, flood-fill regions, region areas.
+- [x] Grid model: open and filled cells, flood-fill regions, region areas (`scripts/core/grid.gd`).
 - [ ] Balls: diagonal movement on a fixed 120 Hz step, swept collision against cells.
 - [ ] Walls: click to build, switch direction, two halves, breaking on a ball hit, solidifying.
 - [ ] Capture: fill regions with no balls in them.
