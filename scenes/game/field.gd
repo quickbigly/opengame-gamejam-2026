@@ -1,11 +1,9 @@
 extends Node2D
-## Plays one stage: steps the Board at a fixed rate, draws it and takes the player's input.
-## M1 placeholder look; the art pass is M4.
-##
-## Command-line options (after --, e.g. `dev --balls=3 --limit=0.11 --seed=42`):
-##   --balls=N   balls in the stage (default 1)
-##   --limit=F   pen limit per ball, as a fraction of the field (default 0.2)
-##   --seed=N    seed for ball placement
+## Shows a Board: steps it at a fixed rate, draws it and the HUD, and takes wall input.
+## Every board event is re-emitted as board_event for the run and effects.
+## Placeholder look; the art pass is M4.
+
+signal board_event(event: Dictionary)
 
 const CELL := 20.0
 const FIELD_ORIGIN := Vector2(160, 64)
@@ -27,14 +25,18 @@ const COLOR_TEXT := Color("e8ecf4")
 const COLOR_TEXT_DIM := Color("7a8399")
 const COLOR_GOOD := Color("7fd8be")
 const COLOR_BAD := Color("ff5d73")
+const COLOR_XP := Color("c792ea")
 
 var board: Board
+## The run the board belongs to, for the HUD. Null on the title screen.
+var run: Run
+## Whether the board is stepped.
+var running := false
+## Whether clicks and keys build walls.
+var input_enabled := false
 var vertical := false
 var hover_cell := Vector2i(-1, -1)
 
-var _ball_count := 1
-var _limit := 0.2
-var _rng := RandomNumberGenerator.new()
 var _accumulator := 0.0
 var _flash := 0.0
 var _font: Font
@@ -42,53 +44,44 @@ var _font: Font
 
 func _ready() -> void:
 	_font = ThemeDB.fallback_font
-	_rng.randomize()
-	for arg in OS.get_cmdline_user_args():
-		var parts := arg.trim_prefix("--").split("=")
-		if parts.size() != 2:
-			continue
-		match parts[0]:
-			"balls": _ball_count = maxi(1, parts[1].to_int())
-			"limit": _limit = clampf(parts[1].to_float(), 0.01, 1.0)
-			"seed": _rng.seed = parts[1].to_int()
-	_new_board()
 
 
-func _new_board() -> void:
-	board = Board.new(_limit)
-	board.spawn_balls(_ball_count, _rng)
+func show_board(new_board: Board, new_run: Run) -> void:
+	board = new_board
+	run = new_run
 	_accumulator = 0.0
 	_flash = 0.0
+	queue_redraw()
 
 
 func _process(delta: float) -> void:
-	_accumulator = minf(_accumulator + delta, Board.STEP * MAX_STEPS_PER_FRAME)
-	while _accumulator >= Board.STEP:
-		board.step()
-		_accumulator -= Board.STEP
-	for event in board.take_events():
-		if event["type"] == "half_broken":
-			_flash = 1.0
+	if board and running:
+		_accumulator = minf(_accumulator + delta, Board.STEP * MAX_STEPS_PER_FRAME)
+		while _accumulator >= Board.STEP:
+			board.step()
+			_accumulator -= Board.STEP
+			for event in board.take_events():
+				if event["type"] == "half_broken":
+					_flash = 0.4 if event["spared"] else 1.0
+				board_event.emit(event)
 	_flash = maxf(0.0, _flash - delta * 3.0)
 	hover_cell = _cell_at(get_local_mouse_position())
 	queue_redraw()
 
 
 func _unhandled_input(event: InputEvent) -> void:
+	if not input_enabled or board == null:
+		return
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_LEFT:
-			if board.state == Board.State.PLAYING:
-				board.start_wall(_cell_at(event.position), vertical)
-			else:
-				_new_board()
+			board.start_wall(_cell_at(get_local_mouse_position()), vertical)
+			get_viewport().set_input_as_handled()
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
 			vertical = not vertical
-	elif event is InputEventKey and event.pressed and not event.echo:
-		match event.keycode:
-			KEY_SPACE:
-				vertical = not vertical
-			KEY_R:
-				_new_board()
+			get_viewport().set_input_as_handled()
+	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_SPACE:
+		vertical = not vertical
+		get_viewport().set_input_as_handled()
 
 
 func _cell_at(point: Vector2) -> Vector2i:
@@ -107,15 +100,18 @@ func _rect_to_screen(rect: Rect2) -> Rect2:
 func _draw() -> void:
 	var view := get_viewport_rect().size
 	draw_rect(Rect2(Vector2.ZERO, view), COLOR_BACKGROUND)
+	if board == null:
+		return
 	_draw_cells()
-	_draw_preview()
+	if input_enabled:
+		_draw_preview()
 	_draw_halves()
 	_draw_balls()
-	_draw_pen_meters()
-	_draw_hud(view)
+	if run:
+		_draw_pen_meters()
+		_draw_hud()
 	if _flash > 0.0:
 		draw_rect(Rect2(Vector2.ZERO, view), Color(COLOR_BAD, 0.25 * _flash))
-	_draw_overlay(view)
 
 
 func _draw_cells() -> void:
@@ -169,6 +165,8 @@ func _draw_halves() -> void:
 func _draw_balls() -> void:
 	for ball in board.balls:
 		var color := COLOR_BALL_LOCKED if ball.locked else COLOR_BALL
+		if board.is_frozen():
+			color = color.lerp(COLOR_HALF_A, 0.5)
 		draw_circle(_to_screen(ball.position), ball.radius * CELL, color, true, -1.0, true)
 
 
@@ -182,33 +180,27 @@ func _draw_pen_meters() -> void:
 		draw_string(_font, at + Vector2(-width * 0.5, 6), text, HORIZONTAL_ALIGNMENT_CENTER, width, 16, color)
 
 
-func _draw_hud(view: Vector2) -> void:
-	var y := 30.0
+func _draw_hud() -> void:
 	var left := FIELD_ORIGIN.x
-	var field_width := board.grid.width * CELL
+	var width := board.grid.width * CELL
+	var top := 28.0
+	var bottom := 52.0
+
+	draw_string(_font, Vector2(left, top), "Stage %d / %d" % [run.stage, run.stage_count()], HORIZONTAL_ALIGNMENT_LEFT, -1, 22, COLOR_TEXT)
+	draw_string(_font, Vector2(left, top), Run.thousands(run.score), HORIZONTAL_ALIGNMENT_CENTER, width, 24, COLOR_TEXT)
 	var lives_color := COLOR_BAD if board.lives <= 1 else COLOR_TEXT
-	draw_string(_font, Vector2(left, y), "Lives  %d" % board.lives, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, lives_color)
-	var limit_text := "Pen limit  %d%% per ball (%d cells)" % [roundi(board.pen_limit * 100.0), floori(board.pen_limit_cells())]
-	draw_string(_font, Vector2(left, y), limit_text, HORIZONTAL_ALIGNMENT_CENTER, field_width, 20, COLOR_TEXT_DIM)
-	var pens_text := "Boxed  %d / %d" % [board.locked_count(), board.balls.size()]
-	draw_string(_font, Vector2(left, y), pens_text, HORIZONTAL_ALIGNMENT_RIGHT, field_width, 22, COLOR_TEXT)
-	var direction := "Vertical" if vertical else "Horizontal"
-	var help := "Click: build wall   Right-click / Space: turn (%s)   R: restart" % direction
-	draw_string(_font, Vector2(0, 54), help, HORIZONTAL_ALIGNMENT_CENTER, view.x, 13, COLOR_TEXT_DIM)
+	draw_string(_font, Vector2(left, top), "Lives  %d" % board.lives, HORIZONTAL_ALIGNMENT_RIGHT, width, 22, lives_color)
 
+	var limit_text := "Limit %s per ball" % Run.percent(board.pen_limit)
+	draw_string(_font, Vector2(left, bottom), limit_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, COLOR_TEXT_DIM)
+	var boxed_text := "Boxed  %d / %d" % [board.locked_count(), board.balls.size()]
+	draw_string(_font, Vector2(left, bottom), boxed_text, HORIZONTAL_ALIGNMENT_RIGHT, width, 16, COLOR_TEXT_DIM)
 
-func _draw_overlay(view: Vector2) -> void:
-	var title := ""
-	var color := COLOR_TEXT
-	match board.state:
-		Board.State.CLEARED:
-			title = "Stage clear"
-			color = COLOR_GOOD
-		Board.State.GAME_OVER:
-			title = "Out of lives"
-			color = COLOR_BAD
-		_:
-			return
-	draw_rect(Rect2(Vector2.ZERO, view), Color(COLOR_BACKGROUND, 0.6))
-	draw_string(_font, Vector2(0, view.y * 0.5), title, HORIZONTAL_ALIGNMENT_CENTER, view.x, 56, color)
-	draw_string(_font, Vector2(0, view.y * 0.5 + 44), "Click to play again", HORIZONTAL_ALIGNMENT_CENTER, view.x, 20, COLOR_TEXT_DIM)
+	# XP bar, centred under the score.
+	var bar := Rect2(left + width * 0.5 - 120, bottom - 10, 240, 8)
+	draw_rect(bar, COLOR_GRID_LINE)
+	var fill := clampf(run.xp / run.xp_needed(), 0.0, 1.0)
+	draw_rect(Rect2(bar.position, Vector2(bar.size.x * fill, bar.size.y)), COLOR_XP)
+	draw_string(_font, Vector2(bar.position.x - 70, bottom), "Lv %d" % run.level, HORIZONTAL_ALIGNMENT_RIGHT, 62, 16, COLOR_XP)
+	if run.pending_levels > 0:
+		draw_string(_font, Vector2(bar.end.x + 8, bottom), "+%d upgrade%s" % [run.pending_levels, "s" if run.pending_levels > 1 else ""], HORIZONTAL_ALIGNMENT_LEFT, -1, 16, COLOR_XP)

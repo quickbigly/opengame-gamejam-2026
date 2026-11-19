@@ -25,12 +25,12 @@ Each milestone ends with something playable. Anything not done by its date gets 
 
 ## M2: Run and Upgrades (Nov 26–30)
 
-- [ ] Stage table (12 stages), stage intro and stage clear screens.
-- [ ] Scoring: capture, combo, squeeze bonus, clean clear, stage multiplier.
-- [ ] XP curve, queued level-ups, upgrade pick screen with rerolls.
-- [ ] The first ~12 upgrades (walls, balls, squeeze, score, survival).
-- [ ] Victory after stage 12, game over summary, local best score.
-- **Exit:** a full run is playable from title to victory.
+- [x] Stage table (12 stages), stage intro and stage clear screens.
+- [x] Scoring: capture, combo, squeeze bonus, clean clear, stage multiplier.
+- [x] XP curve, queued level-ups, upgrade pick screen with rerolls.
+- [x] The first ~12 upgrades (walls, balls, squeeze, score, survival).
+- [x] Victory after stage 12, game over summary, local best score.
+- **Exit:** a full run is playable from title to victory. Done: `Run`, `StageTable` and `Upgrades` in `scripts/core/`, flow in `scripts/main.gd`, screens in `scenes/ui/screens.gd`. 16 upgrades. Start at any stage with `dev --stage=6 --seed=42`.
 
 ## M3: Variety and Balance (Dec 1–5)
 

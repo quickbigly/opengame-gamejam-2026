@@ -6,11 +6,12 @@ extends RefCounted
 ##
 ## Events are dictionaries with a "type" key:
 ##   wall_started   {wall_id, cell, vertical}
-##   half_broken    {wall_id, rect}        a ball hit a growing half; a life is lost
-##   half_completed {wall_id, cells}       a half turned solid
+##   half_broken    {wall_id, rect, spared}  a ball hit a growing half; a life is lost unless spared
+##   half_completed {wall_id, cells}         a half turned solid
 ##   captured       {wall_id, cells, regions}  empty regions were filled
+##   wall_finished  {wall_id, cells, regions}  no half of the wall is still growing; totals for it
 ##   pen_locked     {region, area, limit}
-##   cleared        {}                     every ball is in a locked pen
+##   cleared        {}                       every ball is in a locked pen
 ##   game_over      {}
 
 enum State { PLAYING, CLEARED, GAME_OVER }
@@ -46,11 +47,24 @@ var state := State.PLAYING
 var regions: Grid.Regions
 var pens: Array[Pen] = []
 var captured_cells := 0
+
+# Modifiers, set by upgrades before play starts.
 var max_walls := 1
 var wall_speed := WALL_SPEED
+## A half this many cells or fewer from finishing completes at once.
+var last_stretch := 0.0
+## Balls freeze this long whenever a half turns solid.
+var stun_time := 0.0
+## Ball hits on growing halves that don't cost a life.
+var close_calls := 0
+## A pen locks when its area is within this fraction over its limit.
+var auto_lock := 0.0
 
 var _next_wall_id := 0
 var _events: Array[Dictionary] = []
+var _freeze := 0.0
+## Per wall still in progress: {cells, regions} captured so far.
+var _wall_stats := {}
 
 
 func _init(limit_fraction: float, start_lives := START_LIVES, board_grid: Grid = null) -> void:
@@ -61,7 +75,7 @@ func _init(limit_fraction: float, start_lives := START_LIVES, board_grid: Grid =
 
 
 ## Places balls at random open cell centres, moving diagonally in random directions.
-func spawn_balls(count: int, rng: RandomNumberGenerator, speed := Ball.DEFAULT_SPEED) -> void:
+func spawn_balls(count: int, rng: RandomNumberGenerator, speed := Ball.DEFAULT_SPEED, radius := Ball.DEFAULT_RADIUS) -> void:
 	for i in count:
 		var best := Vector2.ZERO
 		var best_gap := -1.0
@@ -80,7 +94,7 @@ func spawn_balls(count: int, rng: RandomNumberGenerator, speed := Ball.DEFAULT_S
 				break
 		var x_sign := 1 if rng.randi() % 2 == 0 else -1
 		var y_sign := 1 if rng.randi() % 2 == 0 else -1
-		balls.append(Ball.new(best, Ball.diagonal(speed, x_sign, y_sign)))
+		balls.append(Ball.new(best, Ball.diagonal(speed, x_sign, y_sign), radius))
 	_update_pens()
 
 
@@ -115,6 +129,10 @@ func locked_count() -> int:
 	return count
 
 
+func is_frozen() -> bool:
+	return _freeze > 0.0
+
+
 func pen_for_region(region: int) -> Pen:
 	for pen in pens:
 		if pen.region == region:
@@ -126,6 +144,9 @@ func can_start_wall(cell: Vector2i) -> bool:
 	if state != State.PLAYING or grid.is_filled(cell) or walls_building() >= max_walls:
 		return false
 	var rect := Rect2(cell, Vector2.ONE)
+	for half in halves:
+		if half.rect().intersects(rect):
+			return false
 	for ball in balls:
 		if ball.overlaps_rect(rect):
 			return false
@@ -141,6 +162,7 @@ func start_wall(cell: Vector2i, vertical: bool) -> bool:
 	var axis := Vector2i.DOWN if vertical else Vector2i.RIGHT
 	halves.append(WallHalf.new(id, cell, -axis))
 	halves.append(WallHalf.new(id, cell, axis))
+	_wall_stats[id] = {"cells": 0, "regions": 0}
 	_events.append({"type": "wall_started", "wall_id": id, "cell": cell, "vertical": vertical})
 	return true
 
@@ -149,18 +171,25 @@ func start_wall(cell: Vector2i, vertical: bool) -> bool:
 func step(dt := STEP) -> void:
 	if state == State.GAME_OVER:
 		return
-	for ball in balls:
-		ball.step(grid, dt)
+	if _freeze > 0.0:
+		_freeze = maxf(0.0, _freeze - dt)
+	else:
+		for ball in balls:
+			ball.step(grid, dt)
 	if state != State.PLAYING:
 		return
 
 	var completed: Array[WallHalf] = []
 	for half in halves:
-		var done := half.grow(grid, wall_speed * dt)
+		var done := half.grow(grid, wall_speed * dt, last_stretch)
 		if _ball_touches(half.rect()):
 			half.state = WallHalf.State.BROKEN
-			lives -= 1
-			_events.append({"type": "half_broken", "wall_id": half.wall_id, "rect": half.rect()})
+			var spared := close_calls > 0
+			if spared:
+				close_calls -= 1
+			else:
+				lives -= 1
+			_events.append({"type": "half_broken", "wall_id": half.wall_id, "rect": half.rect(), "spared": spared})
 		elif done:
 			completed.append(half)
 
@@ -168,6 +197,7 @@ func step(dt := STEP) -> void:
 		lives = 0
 		halves.clear()
 		state = State.GAME_OVER
+		_finish_walls()
 		_events.append({"type": "game_over"})
 		return
 
@@ -175,6 +205,7 @@ func step(dt := STEP) -> void:
 		if half.is_growing():  # an earlier capture this step may have finished it already
 			_solidify(half)
 	halves = halves.filter(func(h: WallHalf) -> bool: return h.is_growing())
+	_finish_walls()
 
 
 func _ball_touches(rect: Rect2) -> bool:
@@ -188,6 +219,8 @@ func _solidify(half: WallHalf) -> void:
 	var cells := half.cells(grid)
 	half.state = WallHalf.State.SOLID
 	grid.fill_cells(cells)
+	if stun_time > 0.0:
+		_freeze = stun_time
 	_events.append({"type": "half_completed", "wall_id": half.wall_id, "cells": cells})
 	_capture(half.wall_id)
 
@@ -215,6 +248,9 @@ func _capture(wall_id: int) -> void:
 		region_count += 1
 	if region_count > 0:
 		captured_cells += captured.size()
+		if _wall_stats.has(wall_id):
+			_wall_stats[wall_id]["cells"] += captured.size()
+			_wall_stats[wall_id]["regions"] += region_count
 		_events.append({"type": "captured", "wall_id": wall_id, "cells": captured, "regions": region_count})
 
 	# A growing half whose path was captured has nothing left to fill.
@@ -222,6 +258,20 @@ func _capture(wall_id: int) -> void:
 		if half.is_growing() and grid.is_filled(half.origin) and grid.is_filled(half.origin + half.direction):
 			half.state = WallHalf.State.SOLID
 	_update_pens()
+
+
+## Reports each wall that has no half left growing.
+func _finish_walls() -> void:
+	var growing := {}
+	for half in halves:
+		if half.is_growing():
+			growing[half.wall_id] = true
+	for id in _wall_stats.keys():
+		if growing.has(id):
+			continue
+		var stats: Dictionary = _wall_stats[id]
+		_wall_stats.erase(id)
+		_events.append({"type": "wall_finished", "wall_id": id, "cells": stats["cells"], "regions": stats["regions"]})
 
 
 func _update_pens() -> void:
@@ -250,7 +300,7 @@ func _update_pens() -> void:
 
 	for pen in pens:
 		pen.limit = pen_limit_cells() * pen.weight
-		pen.locked = pen.area <= pen.limit
+		pen.locked = pen.area <= pen.limit * (1.0 + auto_lock)
 		pen.centroid = sums[pen.region] / pen.area
 		var newly_locked := false
 		for ball in pen.balls:

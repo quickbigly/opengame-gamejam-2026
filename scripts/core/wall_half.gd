@@ -53,7 +53,10 @@ func cells(grid: Grid) -> PackedVector2Array:
 
 
 ## Moves the tip forward. Returns true if it reached the first filled cell ahead.
-func grow(grid: Grid, distance: float) -> bool:
+## Within `snap` cells of the end, the tip jumps straight there.
+func grow(grid: Grid, distance: float, snap := 0.0) -> bool:
 	var target := target_length(grid)
 	length = minf(length + distance, target)
+	if target - length <= snap:
+		length = target
 	return length >= target

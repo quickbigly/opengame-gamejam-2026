@@ -68,9 +68,9 @@ The genre and its core verb (grow walls to trap bouncing balls) are classic arca
 | Clean clear | +25% of the level's score if no life was lost this level |
 
 - A **stage multiplier** of (1 + 0.15 × stage) applies to all points, so later stages are worth more.
-- **XP equals points.** Level *n* needs 800 × 1.3^(n−1) XP.
+- **XP equals points.** Level *n* needs 5000 × 1.25^(n−1) XP. (The first guess, 800 × 1.3^(n−1), gave about five level-ups on stage 1 alone; this gives roughly one per stage. Tuned in M3.)
 - Level-ups during play are queued and shown with a small pip on the HUD. They're resolved on the level-clear screen, so play is never interrupted mid-wall.
-- Each level-up offers **3 upgrades; pick 1**. Several level-ups mean several picks in a row.
+- Each level-up offers **3 upgrades; pick 1**. Several level-ups mean several picks in a row. Each pick comes with 1 reroll (more with the Reroll upgrade).
 
 ## 6. Run Structure
 
