@@ -4,7 +4,7 @@
 
 - **Premise:** it's the night before the town's winter festival broadcast, and a blizzard has snowed in the town. You're the only TV and tech fixer.
 - **How a job works:** neighbors call with problems. You visit, look at how their living room is hooked up, and fix it.
-- **Order matters** inside each fix, along your route through town, and in what you pack in your toolbox.
+- **Order matters** inside each fix, and along your route through town.
 
 ## Design Rule: No Jargon Required
 
@@ -332,7 +332,6 @@ The faults are grouped into four tiers, roughly in the order a player meets them
   2. Turn on Turbo Mode for that socket.
   3. Run the console's screen setup.
 - **Order rule:** turning on Turbo Mode with the old cable makes the blinking constant.
-- **Bonus:** Fast Cables are limited, so using one here is a route decision.
 - **Tip Card:** "Fast games need fast cables."
 - **Real basis:** HDMI 2.1 4K/120 on an old cable, and the TV's Enhanced HDMI format.
 
@@ -364,6 +363,7 @@ The faults are grouped into four tiers, roughly in the order a player meets them
   4. Restart the festival player.
 - **Order rule:** setting the player to max quality by hand blacks out the projector, and the crowd groans.
 - **Ending:** fixing it in time starts the festival broadcast. This is the game's ending.
+- **Tip Card:** "A splitter can only please both screens if you tell it which one leads."
 - **Real basis:** the HDMI splitter's EDID uses the lowest common display, and you fix it with EDID copy and downscaling.
 
 ---
@@ -373,8 +373,7 @@ The faults are grouped into four tiers, roughly in the order a player meets them
 - **Linked faults:**
   - #6, #9 and #12 share the sound socket and Auto-control.
   - #7 and #14 share the Wi-Fi Box.
-  - #5 and #15 can come back on Night 3 if their bonus was skipped.
+  - #5 and #15 can come back on Night 3 if their bonus was skipped. #12 comes back as "The Sound Bar Went Quiet" if the TV's Auto-control was left off. Callbacks are fixed for free.
   - Route order on the town map decides which callbacks happen.
 - **Tip Cards stack:** later faults reuse earlier tips in new combinations. That's the real difficulty curve.
-- **Toolbox parts compete for budget and van space:** Remote Booster, Dish Cover, Hum Stopper, Setup Mic, Extension Cable, Surge Protector and Fast Cable. Planning the loadout is the optimization layer.
 - **Real gadget menus aren't used.** All in-game menus are fictional, short and consistently worded.

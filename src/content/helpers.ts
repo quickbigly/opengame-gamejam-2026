@@ -17,6 +17,11 @@ export function spec(label: string, options: [value: string, label: string][]): 
   return { label, options: options.map(([value, l]) => ({ value, label: l })) };
 }
 
+/** A button in a settings menu (e.g. "Hold for 30 seconds"). It snaps back after every press; rules react to the action. */
+export function button(label: string, presses: [value: string, label: string][]): SettingSpec {
+  return { ...spec(label, [['rest', '—'], ...presses]), momentary: true };
+}
+
 /** Standard TV inputs along the bottom edge. Pass the socket ids that have the sound (speaker) badge. */
 export function tvInputs(count: number, soundSockets: string[] = []): Socket[] {
   return Array.from({ length: count }, (_, i) => {

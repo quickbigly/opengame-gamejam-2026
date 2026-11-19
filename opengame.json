@@ -1,0 +1,10 @@
+{
+  "$schema": "https://opengame.io/schema/opengame.json",
+  "title": "Snowbound Signal",
+  "description": "auto",
+  "genre": "auto",
+  "kind": "game",
+  "build": { "command": "npm run build", "output": "dist" },
+  "controls": ["mouse", "keyboard"],
+  "requires": { "desktopOnly": true }
+}

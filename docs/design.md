@@ -1,8 +1,12 @@
 # Snowbound Signal: Design Doc
 
-**Status:** draft v1, written 2026-11-18.
+**Status:** draft v2.
 
-**Jam:** OpenGame Game Jam 2026. The deadline is **Dec 18**, and we target Dec 17. The rules are in [jam-rules.md](jam-rules.md).
+**Changes since v1:**
+- Parts and tools are free and always with you. There's no Van screen, no packing, no slot limit and no parts budget. You drive to a house and fix it.
+- Coins are earned from tips and only buy permanent upgrades between nights. The Roof Rack upgrade is gone, since it only added van slots.
+
+**Jam:** OpenGame Game Jam 2026. The deadline is **Dec 18**. The rules are in [jam-rules.md](jam-rules.md).
 
 **Related docs:** [fault-library.md](fault-library.md) has the puzzle content.
 
@@ -12,7 +16,7 @@
 
 It's the night before Pinecrest Hollow's winter festival broadcast, and a blizzard has snowed in the town. You're the only person who knows how to fix TVs and gadgets.
 
-Over three snowy nights, neighbors call with problems like "the TV says No Signal," "the sound bar won't work" or "the internet dies at 9." You plan your route through half-plowed streets, pack your van, and untangle each living room's hookups before the clock hits midnight.
+Over three snowy nights, neighbors call with problems like "the TV says No Signal," "the sound bar won't work" or "the internet dies at 9." You plan your route through half-plowed streets and untangle each living room's hookups before the clock hits midnight.
 
 **Fix things in the right order and the tips get bigger. Fix the town hall's screen on Night 3 and the festival goes live.**
 
@@ -20,7 +24,7 @@ Over three snowy nights, neighbors call with problems like "the TV says No Signa
 
 1. **Cozy, never stressful.** The clock creates planning pressure, but failure only costs tips. Players are never blocked. Warm lights, snow and kind neighbors.
 2. **Anyone can read the problem.** There's no jargon. The colored lines in the Hookup View show what's wrong (see the "No Jargon" rule in the fault library).
-3. **Order matters, and it pays.** Every fix, route and toolbox load has a best order. The game shows its math so optimizers can plan in spreadsheets, while casual players can ignore it.
+3. **Order matters, and it pays.** Every fix and every route through town has a best order. The game shows its math so optimizers can plan in spreadsheets, while casual players can ignore it.
 4. **Real problems, made friendly.** Every fault comes from a real-world problem. That authenticity is our edge over other entries.
 
 ## 3. Jam Constraints Checklist
@@ -38,13 +42,13 @@ Over three snowy nights, neighbors call with problems like "the TV says No Signa
 ┌─ NIGHT START (6:00 PM) ───────────────────────────────────────┐
 │ 1. Dispatch Board: read the calls (symptom, neighbor, deadline,│
 │    pay)                                                        │
-│ 2. Pack the Van: pick parts (limited slots)                    │
-│ 3. Town Map: choose the next house. Travel costs time, and     │
+│ 2. Town Map: choose the next house. Travel costs time, and     │
 │    snow matters.                                               │
-│ 4. House: solve the fault in the Hookup View → payout          │
-│    (repeat steps 3 and 4; new calls can arrive mid-night)      │
-│ 5. MIDNIGHT: Night Report (earnings, Par comparison, stars)    │
-└─ BETWEEN NIGHTS: Shop (restock parts, buy upgrades) ──────────┘
+│ 3. House: solve the fault in the Hookup View → payout. Your    │
+│    full kit is always with you; nothing to prepare.            │
+│    (repeat steps 2 and 3; new calls can arrive mid-night)      │
+│ 4. MIDNIGHT: Night Report (earnings, Par comparison, stars)    │
+└─ BETWEEN NIGHTS: Shop (buy permanent upgrades) ───────────────┘
 ```
 
 **Session length:** about 15 minutes per night and **about 45 to 60 minutes per run.** That's long enough to feel complete and short enough for judges to finish.
@@ -55,11 +59,10 @@ Over three snowy nights, neighbors call with problems like "the TV says No Signa
 | --- | --- |
 | **Title** | New game, continue, settings, credits. Snowfall over the town at night. |
 | **Dispatch Board** | A cork board of call cards. Each card shows the neighbor's portrait, a quote, a deadline, the base pay and a ★ difficulty. Click a card to hear the voiced call. |
-| **Van** | Grid slots and part icons with their weight, plus the tools you've unlocked. Drag parts in and out. |
 | **Town Map** | Top-down cozy town. Roads have snow levels, the snowplow's route and times are visible, and a clock is shown. Click a house to drive there. |
 | **House: Hookup View** | The puzzle screen. See §6. |
 | **Night Report** | The payout breakdown per job, total vs. **Par**, stars and Tip Cards earned. |
-| **Shop** | Restock parts and buy permanent upgrades. |
+| **Shop** | Buy permanent upgrades with the night's tips. |
 | **Notebook** (overlay, `Tab`) | Tip Cards, neighbor notes and the formulas from §7, shown in-game. |
 | **Ending** | The festival broadcast plays on the town hall screen, the neighbors gather, credits. |
 
@@ -90,7 +93,7 @@ Every action costs **game minutes**:
 | Move or unplug a cable | 2 min | Drag a cable end to a socket |
 | Turn a device on or off | 1 min | Click its power button |
 | Change a setting | 1 min | A small menu with 3 to 5 options |
-| Install a part from the van | 3 min | Drag from the toolbox tray |
+| Install a part from your kit | 3 min | Drag from the toolbox tray |
 | Wait | As the fault says | `Space` |
 | Ask the neighbor | 2 min | Dialogue with 2 to 3 choices; can reveal clues |
 | Undo the last action | Full cost again | Never free |
@@ -143,34 +146,45 @@ Payout = Base × CleanMult × (1 + OnTimeBonus) × (1 + Streak) + BonusFix
 ### Rating
 
 - **Night stars:** ★ for finishing every job, ★ for at least 70% of Par, ★ for at least 95% of Par.
-- **Par** is the best possible night score. We compute it offline with a solver script, which also serves as a balance test, and show it in the Night Report.
-- **Run score:** the total coins, plus a festival bonus if the finale is fixed before midnight on Night 3. It's saved locally as a personal best.
+- **Par** is the best possible night score: every fix clean and on par, the best route, order and bonus choices, with the player's upgrades. The solver (`src/engine/solver.ts`) runs in the game for the Night Report, in the tests as a balance check, and in `npm run par` as a balance report.
+- **Run score:** every tip earned over the run (spending in the shop doesn't lower it), plus a **festival bonus of 150** if the finale is fixed before midnight on Night 3. It's saved locally as a personal best.
 
 ## 8. Town, Route and Callbacks
 
 - **Size:** about 12 houses plus the town hall, connected by roads in a small graph of about 16 edges.
 - **Calls per night:** Night 1 has 6 calls, Night 2 has 7 and Night 3 has 6 plus the finale. **About 4 calls are known at 6 PM,** and the rest arrive at set times. The schedule is the same every run, so routes can be planned.
-- **Callbacks:** some fixes have a preventive bonus, such as the Dish Cover (#5) or the Surge Protector (#15). Skipping it means that neighbor calls back on Night 3 and takes time away from the finale. **Investing early pays off later.**
+- **Callbacks:** some fixes have a preventive bonus, such as the Dish Cover (#5) or the Surge Protector (#15). Skipping it means that neighbor calls back on Night 3 and takes time away from the finale. **Spending the extra minutes early pays off later.**
+  - #12 calls back too if you "fix" it by turning off the TV's Auto-control (the Sound Bar goes quiet). That callback is its own small fault, "The Sound Bar Went Quiet."
+  - **Callbacks are free:** you fix your own leftovers and earn no tip, but they count toward "every call answered" and the clean streak. A callback never calls back again.
+- **Schedule:**
+
+| Night | Known at 6 PM | Later | Callbacks |
+| --- | --- | --- | --- |
+| 1 | #1, #2, #3, #6 | #4 (7:15), #5 (8:15) | |
+| 2 | #7, #15, #12, #8 | #9 (7:00), #10 (8:00), #11 (9:05) | |
+| 3 | #20 (finale), #13, #16, #14 | #17 (7:00), #18 (8:00), #19 (8:30) | #5 (6:30), #12 (7:00), #15 (7:30) |
+
+- **Weather:** each night has its own plow and snowfall schedule. Night 2 starts with fresh snow on the north side; Night 3 is a blizzard where every road starts worse and the plows keep the way to Town Hall open.
 - **Shared fixes:** the Wi-Fi Box faults (#7 and #14) and the sound socket faults (#6, #9 and #12) teach the same Tip Card. Doing the easier one first makes the harder one faster, because a Tip Card can be unlocked into a one-click "Tech Instinct" action.
 
-## 9. Van, Parts and Upgrades
-
-**The van has 8 slot units.**
+## 9. Kit and Upgrades
 
 ### Parts
 
-Parts are used up when installed.
+Your kit always has every part and tool, in any quantity. There's no packing, buying or restocking: you drive to a house and fix it with what you need. Some houses also lend you an item of their own (for example hot water or a kitchen broom at #5), which only works at that house.
 
-| Part | Slots | Cost | Used in |
-| --- | --- | --- | --- |
-| Remote Booster | 1 | 10 | #2 |
-| Dish Cover | 2 | 15 | #5 bonus |
-| Hum Stopper | 1 | 12 | #8 |
-| Setup Mic | 1 | 15 | #13 |
-| Extension Cable | 1 | 8 | #14 |
-| Surge Protector | 2 | 15 | #15 bonus |
-| Fast Cable | 1 | 20 | #18, limited to 2 per night in the shop |
-| Soft Broom | 2 | — (tool) | #5, kept forever |
+The toolbox shows the whole kit at every house, so it never gives away which part a fault needs. Using the wrong part is a wasted action, like any other.
+
+| Item | Used in |
+| --- | --- |
+| Remote Booster | #2 |
+| Dish Cover | #5 bonus |
+| Hum Stopper | #8 |
+| Setup Mic | #13 |
+| Extension Cable | #14 |
+| Surge Protector | #15 bonus |
+| Fast Cable | #18 |
+| Soft Broom | #5 |
 
 ### Upgrades
 
@@ -181,7 +195,6 @@ Upgrades are permanent and bought between nights.
 | Snow Tires | 60 | Snow factor −0.5 (deep snow becomes ×2.0) |
 | Signal Lens | 50 | Line details visible without inspecting |
 | Thermos | 40 | +30 minutes per night |
-| Roof Rack | 70 | +3 van slots |
 | Friendly Face | 45 | Ask the neighbor costs 0 min |
 
 ## 10. Art, Audio and Tone
@@ -251,7 +264,7 @@ The game can be played entirely with the mouse. The keyboard adds shortcuts:
 | `Space` | Wait |
 | `Tab` | Notebook |
 | `Z` | Undo |
-| `1` to `8` | Van slots |
+| `1` to `8` | Toolbox items |
 | `M` | Map |
 | `Esc` | Pause and settings |
 
@@ -259,29 +272,29 @@ The game can be played entirely with the mouse. The keyboard adds shortcuts:
 
 ## 13. Genre Choice
 
-The candidates are **Simulation & Management** (route, time and van planning) or **Puzzle & Casual** (the Hookup View).
+The candidates are **Simulation & Management** (route and time planning) or **Puzzle & Casual** (the Hookup View).
 
 My current lean is Simulation & Management, because it's probably less crowded and the planning layer is our depth. We'll confirm it against the official track list from `opengame jams global-ai-game-jam-2026 --json` before we deploy.
 
 ## 14. Milestones
 
-Today is Nov 18. The target submission date is Dec 17, which leaves 1 day of buffer.
+The only fixed date is the jam deadline, **Dec 18**. Milestones run in order.
 
-| Dates | Milestone | Done when |
+| Milestone | Done when | Status |
 | --- | --- | --- |
-| Nov 18 to 23 | **M1: vertical slice** | One house, playable start to finish in the Hookup View, with faults #1 and #6, placeholder art and payout math. |
-| Nov 24 to 30 | **M2: core loop** | Dispatch, van, map with snow and plow, clock, Night Report. Night 1 is fully playable with faults #1 to #11. Deployed privately once (with approval) to prove the pipeline. |
-| Dec 1 to 7 | **M3: full content** | All 20 faults, Nights 2 and 3, callbacks, shop, upgrades, finale, Par solver. |
-| Dec 8 to 13 | **M4: art and audio** | fal art, ElevenLabs voices, music, sound effects, title, ending, tutorial polish. |
-| Dec 14 to 16 | **M5: playtest and polish** | Outside playtests, balance with the solver, bug fixes, `opengame check --build`. |
-| Dec 17 | **Submit** | Deploy (with approval), then confirm the track and details. |
+| **M1: vertical slice** | One house, playable start to finish in the Hookup View, with faults #1 and #6, placeholder art and payout math. | Done |
+| **M2: core loop** | Dispatch, map with snow and plow, clock, Night Report. Night 1 is fully playable with faults #1 to #11. Deployed privately once (with approval) to prove the pipeline. | Done |
+| **M3: full content** | All 20 faults, Nights 2 and 3, callbacks, shop, upgrades, finale, Par solver. | Done |
+| **M4: art and audio** | fal art, ElevenLabs voices, music, sound effects, title, ending, tutorial polish. | Next |
+| **M5: playtest and polish** | Outside playtests, balance with the solver, bug fixes, `opengame check --build`. | |
+| **Submit** | Deploy (with approval), then confirm the track and details, before Dec 18. | |
 
 ### Cut List
 
 If we fall behind, we cut in this order:
 
 1. Meshy assets.
-2. The Friendly Face and Roof Rack upgrades.
+2. The Friendly Face upgrade.
 3. Mid-night new calls (all calls known at 6 PM instead).
 4. Callbacks.
 5. Faults #13 and #19.

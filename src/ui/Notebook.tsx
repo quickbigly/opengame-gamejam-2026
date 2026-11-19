@@ -1,6 +1,9 @@
 import { BASE_PAY } from '../engine/scoring';
+import { UPGRADES, type Upgrades } from '../engine/upgrades';
+import { FESTIVAL_BONUS } from '../game/run';
 
-export function Notebook({ tips, onClose }: { tips: string[]; onClose: () => void }) {
+export function Notebook({ tips, upgrades, onClose }: { tips: string[]; upgrades: Upgrades; onClose: () => void }) {
+  const owned = UPGRADES.filter((u) => upgrades[u.id]);
   return (
     <div className="overlay" role="dialog" aria-modal="true" aria-label="Notebook" onClick={onClose}>
       <div className="notebook" onClick={(e) => e.stopPropagation()}>
@@ -43,7 +46,23 @@ export function Notebook({ tips, onClose }: { tips: string[]; onClose: () => voi
             </li>
           </ul>
           <p className="small muted">Looking closer and asking questions cost time, but never spoil a clean fix. Undo costs the time again.</p>
+          <p className="small muted">
+            Callbacks are free: if you skip a fix that prevents trouble, that neighbor calls back on Night 3 and you fix it for nothing.
+            Fix the festival screen before midnight on Night 3 for a 🪙 {FESTIVAL_BONUS} festival bonus.
+          </p>
         </section>
+        {owned.length > 0 && (
+          <section>
+            <h3>Your upgrades</h3>
+            <ul className="small">
+              {owned.map((u) => (
+                <li key={u.id}>
+                  {u.icon} <strong>{u.name}:</strong> {u.blurb}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         <p className="small muted">
           Press <kbd>Tab</kbd> or <kbd>Esc</kbd> to close.
         </p>

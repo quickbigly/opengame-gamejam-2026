@@ -1,5 +1,5 @@
 import { useRef, useState, type PointerEvent } from 'react';
-import type { Cable, Device, Plug, RoomState, RoomView, SignalKind } from '../engine/types';
+import type { Cable, Device, LinkView, Plug, RoomState, RoomView, SignalKind } from '../engine/types';
 import { VIEW_H, VIEW_W, cablePath, danglePos, socketPos, type Pt } from './geometry';
 
 export interface Carrying {
@@ -20,8 +20,8 @@ interface Props {
   onPower: (device: string) => void;
 }
 
-const SIGNAL_GLYPH: Record<SignalKind, string> = { picture: '▣', sound: '♪', internet: '◉', control: '◌' };
-const SIGNAL_NAME: Record<SignalKind, string> = { picture: 'Picture', sound: 'Sound', internet: 'Internet', control: 'Remote' };
+const SIGNAL_GLYPH: Record<SignalKind, string> = { picture: '▣', sound: '♪', internet: '◉', control: '◌', power: 'ϟ' };
+const SIGNAL_NAME: Record<SignalKind, string> = { picture: 'Picture', sound: 'Sound', internet: 'Internet', control: 'Remote', power: 'Power' };
 
 export function HookupView(p: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
@@ -82,6 +82,10 @@ export function HookupView(p: Props) {
         />
       ))}
 
+      {(p.view.links ?? []).map((l) => (
+        <LinkLine key={l.id} l={l} room={p.room} selected={p.selected === l.id} onSelect={() => p.onSelect(l.id)} />
+      ))}
+
       {/* Sockets sit under the cables: plugs are grabbed on top, and the carried plug ignores the pointer so free sockets catch the drop. */}
       {Object.values(p.room.devices).flatMap((d) =>
         d.sockets.map((s) => {
@@ -90,8 +94,12 @@ export function HookupView(p: Props) {
           const free = !occupied.has(key);
           const listening = d.settings.input === s.id;
           const top = s.side === 'top';
-          const labelX = top ? pos.x + 14 : pos.x;
-          const labelY = top ? pos.y - 6 : s.side === 'bottom' ? pos.y - 14 : pos.y + 4;
+          const side = s.side === 'left' || s.side === 'right';
+          // Side labels sit just outside the device, above the cable, clear of the power button.
+          const labelX = top ? pos.x + 14 : side ? pos.x + (s.side === 'right' ? 10 : -10) : pos.x;
+          // TV labels sit inside the frame; small devices put bottom labels underneath, clear of their status text.
+          const labelY = top ? pos.y - 6 : s.side === 'bottom' ? (d.kind === 'tv' ? pos.y - 14 : pos.y + 24) : pos.y - 10;
+          const anchor = top || s.side === 'right' ? 'start' : s.side === 'left' ? 'end' : 'middle';
           return (
             <g key={key} className={`socket ${free ? 'free' : 'used'} ${listening ? 'listening' : ''}`}>
               {listening && <circle className="listen-ring" cx={pos.x} cy={pos.y} r={15} />}
@@ -103,11 +111,12 @@ export function HookupView(p: Props) {
                 r={9}
                 onPointerUp={(e) => dropOn({ device: d.id, socket: s.id }, e)}
               >
-                <title>{`${d.name}: ${s.label}${s.badges?.includes('sound') ? ' (sound socket)' : ''}${listening ? ' — the TV is listening here' : ''}`}</title>
+                <title>{`${d.name}: ${s.label}${s.badges?.includes('sound') ? ' (sound socket)' : ''}${s.badges?.includes('handshake') ? ' (✓ handshake)' : ''}${listening ? ' — the TV is listening here' : ''}`}</title>
               </circle>
-              <text className="socket-label" x={labelX} y={labelY} textAnchor={top ? 'start' : 'middle'}>
+              <text className="socket-label" x={labelX} y={labelY} textAnchor={anchor}>
                 {s.badges?.includes('sound') ? '🔊 ' : ''}
                 {s.label}
+                {s.badges?.includes('handshake') ? ' ✓' : ''}
               </text>
               {listening && (
                 <text className="listen-label" x={pos.x} y={pos.y + (s.side === 'bottom' ? 30 : -22)} textAnchor="middle">
@@ -123,7 +132,6 @@ export function HookupView(p: Props) {
         <CableLine
           key={c.id}
           c={c}
-          room={p.room}
           view={p.view}
           selected={p.selected === c.id}
           carriedEnd={p.carrying?.cable === c.id ? p.carrying.end : null}
@@ -186,6 +194,7 @@ function DeviceCard({
         <>
           <text className="device-name" x={d.x + 14} y={d.y + d.h / 2 - (status ? 4 : -5)} pointerEvents="none">
             {d.name}
+            {d.badge ? ` ${d.badge}` : ''}
           </text>
           {status && (
             <text className={`device-status tone-${status.tone}`} x={d.x + 14} y={d.y + d.h / 2 + 14} pointerEvents="none">
@@ -194,6 +203,7 @@ function DeviceCard({
           )}
         </>
       )}
+      {!d.noPower && (
       <g
         className="power-btn"
         onClick={(e) => {
@@ -209,6 +219,7 @@ function DeviceCard({
         </text>
         <title>{`Turn ${d.name} ${d.powered ? 'off' : 'on'} (1 min)`}</title>
       </g>
+      )}
     </g>
   );
 }
@@ -224,7 +235,6 @@ function CableLine({
   onPick,
 }: {
   c: Cable;
-  room: RoomState;
   view: RoomView;
   selected: boolean;
   carriedEnd: 'a' | 'b' | null;
@@ -254,7 +264,7 @@ function CableLine({
   const state = live ? line.state : 'idle';
 
   return (
-    <g className={`cable signal-${line.signal} state-${state} ${selected ? 'selected' : ''}`}>
+    <g className={`cable kind-${c.kind} signal-${line.signal} state-${state} ${selected ? 'selected' : ''}`}>
       <path className="cable-hit" d={d} onClick={onSelect}>
         <title>{`${SIGNAL_NAME[line.signal]} line${state === 'failed' ? ' — broken' : state === 'weak' ? ' — weak' : ''}. Click for details.`}</title>
       </path>
@@ -321,4 +331,58 @@ function RoomBackdrop() {
       <rect x={330} y={360} width={340} height={20} rx={4} fill="#5c4842" />
     </g>
   );
+}
+
+function LinkLine({ l, room, selected, onSelect }: { l: LinkView; room: RoomState; selected: boolean; onSelect: () => void }) {
+  const from = room.devices[l.from];
+  const to = room.devices[l.to];
+  if (!from || !to) return null;
+  const a = { x: from.x + from.w / 2, y: from.y + from.h / 2 };
+  let b = l.toOffset ? { x: to.x + l.toOffset.dx, y: to.y + l.toOffset.dy } : { x: to.x + to.w / 2, y: to.y + to.h / 2 };
+  const block = l.stopsAt ? room.devices[l.stopsAt] : undefined;
+  if (block) {
+    // Stop where the straight line first enters the blocking device.
+    for (let t = 0; t <= 1; t += 0.01) {
+      const x = a.x + (b.x - a.x) * t;
+      const y = a.y + (b.y - a.y) * t;
+      if (x >= block.x && x <= block.x + block.w && y >= block.y && y <= block.y + block.h) {
+        b = { x, y };
+        break;
+      }
+    }
+  }
+  const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  const d = l.state === 'hum'
+    ? wavy(a, b)
+    : `M${a.x},${a.y} L${b.x},${b.y}`;
+  return (
+    <g className={`cable link signal-${l.signal} state-${l.state} ${selected ? 'selected' : ''}`}>
+      <path className="cable-hit" d={d} onClick={onSelect}>
+        <title>{`${SIGNAL_NAME[l.signal]} (wireless)${l.state === 'failed' ? ' — blocked' : ''}. Click for details.`}</title>
+      </path>
+      <path className="cable-line" d={d} pointerEvents="none" />
+      {l.stopsAt && <text className="link-block" x={b.x} y={b.y + 5} textAnchor="middle" pointerEvents="none">✗</text>}
+      <g className="cable-mid" transform={`translate(${mid.x},${mid.y})`} pointerEvents="none">
+        <circle r={11} />
+        <text y={4} textAnchor="middle">{l.icon ?? SIGNAL_GLYPH[l.signal]}</text>
+      </g>
+    </g>
+  );
+}
+
+/** A wobbly line for hum loops. */
+function wavy(a: Pt, b: Pt): string {
+  const len = Math.hypot(b.x - a.x, b.y - a.y);
+  const n = Math.max(4, Math.round(len / 30));
+  const nx = -(b.y - a.y) / len;
+  const ny = (b.x - a.x) / len;
+  let d = `M${a.x},${a.y}`;
+  for (let i = 1; i <= n; i++) {
+    const t = i / n;
+    const amp = (i % 2 ? 1 : -1) * 14;
+    const cx = a.x + (b.x - a.x) * (t - 0.5 / n) + nx * amp;
+    const cy = a.y + (b.y - a.y) * (t - 0.5 / n) + ny * amp;
+    d += ` Q${cx},${cy} ${a.x + (b.x - a.x) * t},${a.y + (b.y - a.y) * t}`;
+  }
+  return d;
 }

@@ -12,7 +12,13 @@ export const ACTION_COST: Record<Action['type'], number> = {
   ask: 2,
 };
 
-export function actionCost(a: Action): number {
+export interface CostOptions {
+  /** Friendly Face upgrade: asking the neighbor is free. */
+  freeAsk?: boolean;
+}
+
+export function actionCost(a: Action, opts: CostOptions = {}): number {
+  if (a.type === 'ask' && opts.freeAsk) return 0;
   return a.type === 'wait' ? a.minutes : ACTION_COST[a.type];
 }
 
@@ -44,15 +50,24 @@ export function visibleOptions(fault: Fault, s: RoomState, device: string, key: 
   const spec = s.devices[device]?.settingSpecs[key];
   if (!spec) return [];
   return spec.options
-    .filter((o) => {
+    .filter((o, i) => {
+      if (spec.momentary && i === 0) return false;
       const gate = fault.gates?.find((g) => g.device === device && g.key === key && g.option === o.value);
       return !gate || gate.requires(s);
     })
     .map((o) => ({ value: o.value, label: fault.optionLabel?.(s, device, key, o.value) ?? o.label }));
 }
 
-/** Returns a reason the action can't be taken, or null if it's legal. */
-export function illegalReason(fault: Fault, s: RoomState, a: Action): string | null {
+/**
+ * Returns a reason the action can't be taken, or null if it's legal.
+ * `available` lists the items in your kit plus this house's; omit it to allow every item (tests, solver).
+ */
+export function illegalReason(fault: Fault, s: RoomState, a: Action, available?: string[]): string | null {
+  const base = baseIllegalReason(fault, s, a, available);
+  return base ?? fault.legal?.(s, a) ?? null;
+}
+
+function baseIllegalReason(fault: Fault, s: RoomState, a: Action, available?: string[]): string | null {
   switch (a.type) {
     case 'moveCable': {
       const c = s.cables[a.cable];
@@ -68,6 +83,7 @@ export function illegalReason(fault: Fault, s: RoomState, a: Action): string | n
     }
     case 'power':
       if (!s.devices[a.device]) return 'No such device.';
+      if (s.devices[a.device].noPower) return 'That has no power button.';
       return s.devices[a.device].powered === a.on ? `It's already ${a.on ? 'on' : 'off'}.` : null;
     case 'setting': {
       const d = s.devices[a.device];
@@ -80,7 +96,10 @@ export function illegalReason(fault: Fault, s: RoomState, a: Action): string | n
       return a.minutes > 0 ? null : 'Wait for how long?';
     case 'ask':
       return fault.ask.some((t) => t.id === a.topic) ? null : 'No such question.';
-    default:
+    case 'installPart':
+      if (available && !available.includes(a.part) && !fault.houseItems?.includes(a.part)) return 'You don’t have that here.';
+      return null;
+    case 'inspect':
       return null;
   }
 }
@@ -96,7 +115,8 @@ export function applyAction(s: RoomState, a: Action): RoomState {
       next.devices[a.device].powered = a.on;
       break;
     case 'setting':
-      next.devices[a.device].settings[a.key] = a.value;
+      // A momentary setting is a button: it stays at rest, and the fault's rules react to the press.
+      if (!next.devices[a.device].settingSpecs[a.key]?.momentary) next.devices[a.device].settings[a.key] = a.value;
       break;
     case 'installPart':
       next.installedParts.push(a.part);

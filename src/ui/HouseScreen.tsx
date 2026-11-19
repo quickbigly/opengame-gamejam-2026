@@ -2,8 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { act, takeHint, undo, type JobState } from '../engine/job';
 import { actionCost, otherEnd, visibleOptions } from '../engine/room';
 import type { Action, ActionClass, Plug, RoomState } from '../engine/types';
+import type { Call } from '../engine/night';
+import type { Upgrades } from '../engine/upgrades';
+import { callText } from '../game/run';
+import { ITEMS, type Item } from '../content/items';
 import { NEIGHBORS } from '../content/neighbors';
-import type { ScheduledJob } from '../content/slice';
 import { clock } from './format';
 import { HookupView, type Carrying } from './HookupView';
 
@@ -18,18 +21,28 @@ const CLASS_BADGE: Record<ActionClass, { icon: string; label: string }> = {
   bonus: { icon: '★', label: 'Bonus' },
 };
 
+export interface ToolboxEntry {
+  item: Item;
+  source: 'kit' | 'house';
+}
+
 interface Props {
-  sj: ScheduledJob;
-  arrivedAt: number;
+  call: Call;
+  placeName: string;
+  /** Night clock = startClock + job.minutes. */
+  startClock: number;
   coins: number;
+  upgrades: Upgrades;
   job: JobState;
   setJob: (j: JobState) => void;
+  toolbox: ToolboxEntry[];
   onWrapUp: () => void;
+  onLeave: () => void;
   onNotebook: () => void;
 }
 
-export function HouseScreen({ sj, arrivedAt, coins, job, setJob, onWrapUp, onNotebook }: Props) {
-  const fault = sj.fault;
+export function HouseScreen({ call, placeName, startClock, coins, upgrades, job, setJob, toolbox, onWrapUp, onLeave, onNotebook }: Props) {
+  const fault = job.fault;
   const neighbor = NEIGHBORS[fault.caller];
   const [selected, setSelected] = useState<string | null>(null);
   const [carrying, setCarrying] = useState<Carrying | null>(null);
@@ -49,12 +62,13 @@ export function HouseScreen({ sj, arrivedAt, coins, job, setJob, onWrapUp, onNot
   }, [toast]);
 
   const view = useMemo(() => fault.view(job.room), [fault, job.room]);
-  const time = arrivedAt + job.minutes;
-  const late = time > sj.deadline;
+  const time = startClock + job.minutes;
+  const late = time > call.deadline;
+  const available = useMemo(() => toolbox.map((t) => t.item.id), [toolbox]);
 
   const doAction = useCallback(
     (a: Action) => {
-      const r = act(job, a);
+      const r = act(job, a, { available, freeAsk: !!upgrades.friendlyFace });
       if (!r.ok) {
         if (r.reason !== 'already-known') setToast(r.reason);
         return;
@@ -63,7 +77,7 @@ export function HouseScreen({ sj, arrivedAt, coins, job, setJob, onWrapUp, onNot
       if (r.entry.cls === 'optimal' || r.entry.cls === 'bonus') setLastProgress(Date.now());
       if (r.entry.message) setToast(r.entry.message);
     },
-    [job, setJob],
+    [job, setJob, available, upgrades.friendlyFace],
   );
 
   const doUndo = useCallback(() => {
@@ -105,14 +119,14 @@ export function HouseScreen({ sj, arrivedAt, coins, job, setJob, onWrapUp, onNot
           </span>
           <div>
             <strong>{neighbor.name}</strong>
-            <span className="muted"> · {neighbor.address}</span>
+            <span className="muted"> · {placeName}</span>
             <div className="muted small">“{fault.title}”</div>
           </div>
         </div>
         <div className={`hud-clock ${late ? 'late' : ''}`} title="The clock only moves when you act">
           <span className="clock-face">{clock(time)}</span>
           <span className="small muted">
-            due {clock(sj.deadline)}
+            {call.callbackOf ? 'callback · on the house · ' : ''}due {clock(call.deadline)}
             {late ? ' · late' : ''}
           </span>
         </div>
@@ -168,12 +182,13 @@ export function HouseScreen({ sj, arrivedAt, coins, job, setJob, onWrapUp, onNot
           <DetailPanel
             id={selected}
             job={job}
+            lens={!!upgrades.signalLens}
             onAct={doAction}
             onPick={(c) => setCarrying(c)}
             onClose={() => setSelected(null)}
           />
         ) : (
-          <NeighborPanel job={job} onAct={doAction} />
+          <NeighborPanel job={job} text={callText(call)} freeAsk={!!upgrades.friendlyFace} onAct={doAction} />
         )}
 
         {hint && (
@@ -182,6 +197,8 @@ export function HouseScreen({ sj, arrivedAt, coins, job, setJob, onWrapUp, onNot
             <p>{hint}</p>
           </div>
         )}
+
+        <Toolbox entries={toolbox} onUse={(id) => doAction({ type: 'installPart', part: id })} />
 
         <ActionLog job={job} />
       </aside>
@@ -195,6 +212,9 @@ export function HouseScreen({ sj, arrivedAt, coins, job, setJob, onWrapUp, onNot
         </button>
         <button type="button" className="btn" onClick={onNotebook}>
           📓 Notebook <kbd>Tab</kbd>
+        </button>
+        <button type="button" className="btn" onClick={onLeave} title="Your progress here is kept. Come back later.">
+          🚐 Leave for now
         </button>
         <span className="spacer" />
         {showHintButton && (
@@ -217,13 +237,13 @@ export function HouseScreen({ sj, arrivedAt, coins, job, setJob, onWrapUp, onNot
   );
 }
 
-function NeighborPanel({ job, onAct }: { job: JobState; onAct: (a: Action) => void }) {
+function NeighborPanel({ job, text, freeAsk, onAct }: { job: JobState; text: string; freeAsk: boolean; onAct: (a: Action) => void }) {
   const fault = job.fault;
   const n = NEIGHBORS[fault.caller];
   return (
     <div className="card">
       <div className="card-title">The call</div>
-      <p className="quote">“{fault.call.text}”</p>
+      <p className="quote">“{text}”</p>
       <p className="muted small">Click a device or a line to look closer. Grab a cable's end to move it.</p>
       <div className="card-title">Ask {n.name}</div>
       <ul className="ask-list">
@@ -238,7 +258,7 @@ function NeighborPanel({ job, onAct }: { job: JobState; onAct: (a: Action) => vo
                 </>
               ) : (
                 <button type="button" className="btn ghost" onClick={() => onAct({ type: 'ask', topic: t.id })}>
-                  {t.question} <span className="cost">2 min</span>
+                  {t.question} <span className="cost">{freeAsk ? 'free' : '2 min'}</span>
                 </button>
               )}
             </li>
@@ -252,12 +272,15 @@ function NeighborPanel({ job, onAct }: { job: JobState; onAct: (a: Action) => vo
 function DetailPanel({
   id,
   job,
+  lens,
   onAct,
   onPick,
   onClose,
 }: {
   id: string;
   job: JobState;
+  /** Signal Lens: line details show without looking closer. */
+  lens: boolean;
   onAct: (a: Action) => void;
   onPick: (c: Carrying) => void;
   onClose: () => void;
@@ -265,12 +288,14 @@ function DetailPanel({
   const { room, fault } = job;
   const device = room.devices[id];
   const cable = room.cables[id];
+  const link = fault.view(room).links?.find((l) => l.id === id);
   const inspected = room.flags[`inspected:${id}`];
   const hidden = fault.inspect[id];
   const status = device ? fault.view(room).status[id] : undefined;
 
+  const isLine = !!cable || (!!link && !device);
   const inspectBlock = hidden ? (
-    inspected ? (
+    inspected || (lens && isLine) ? (
       <p className="revealed">🔍 {hidden}</p>
     ) : (
       <button type="button" className="btn ghost" onClick={() => onAct({ type: 'inspect', target: id })}>
@@ -288,7 +313,7 @@ function DetailPanel({
   return (
     <div className="card">
       <div className="card-head">
-        <div className="card-title">{device ? device.name : 'Cable'}</div>
+        <div className="card-title">{device ? device.name : link ? 'Wireless line' : 'Cable'}</div>
         <button type="button" className="close" onClick={onClose} aria-label="Close">
           ×
         </button>
@@ -297,13 +322,15 @@ function DetailPanel({
       {device && (
         <>
           {status && <p className={`status tone-${status.tone}`}>{status.text}</p>}
-          <button
-            type="button"
-            className="btn ghost"
-            onClick={() => onAct({ type: 'power', device: id, on: !device.powered })}
-          >
-            ⏻ Turn {device.powered ? 'off' : 'on'} <span className="cost">1 min</span>
-          </button>
+          {!device.noPower && (
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => onAct({ type: 'power', device: id, on: !device.powered })}
+            >
+              ⏻ Turn {device.powered ? 'off' : 'on'} <span className="cost">1 min</span>
+            </button>
+          )}
           {inspectBlock}
           {Object.entries(device.settingSpecs).length > 0 && <div className="card-title">Settings</div>}
           {!device.powered && Object.keys(device.settingSpecs).length > 0 && (
@@ -330,6 +357,15 @@ function DetailPanel({
           {Object.keys(device.settingSpecs).length > 0 && device.powered && (
             <p className="muted small">Each change costs {actionCost({ type: 'setting', device: id, key: '', value: '' })} min.</p>
           )}
+        </>
+      )}
+
+      {link && !cable && !device && (
+        <>
+          <p className="small">
+            <span className="muted">From</span> {room.devices[link.from].name} <span className="muted">to</span> {room.devices[link.to].name}
+          </p>
+          {inspectBlock}
         </>
       )}
 
@@ -428,8 +464,32 @@ function describe(room: RoomState, a: Action): string {
       return `${name(a.device)}: ${spec?.label} → ${spec?.options.find((o) => o.value === a.value)?.label}`;
     }
     case 'installPart':
-      return `Installed ${a.part}`;
+      return `Used ${ITEMS[a.part]?.name ?? a.part}`;
     case 'wait':
-      return `Waited`;
+      return `Waited ${a.minutes} min`;
   }
+}
+
+function Toolbox({ entries, onUse }: { entries: ToolboxEntry[]; onUse: (id: string) => void }) {
+  if (entries.length === 0) return null;
+  return (
+    <div className="card">
+      <div className="card-title">Toolbox</div>
+      <div className="toolbox">
+        {entries.map(({ item, source }) => (
+          <button
+            type="button"
+            key={item.id}
+            className="tool"
+            onClick={() => onUse(item.id)}
+            title={`${item.blurb} Use it here: 3 min.`}
+          >
+            <span className="tool-icon">{item.icon}</span>
+            <span className="tool-name">{item.name}</span>
+            {source === 'house' && <span className="tool-count muted small">borrowed</span>}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }

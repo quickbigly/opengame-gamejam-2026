@@ -1,8 +1,11 @@
 // A single house visit: action history, order detection, undo, hints and the final JobResult.
 
-import { actionCost, applyAction, illegalReason, matches } from './room';
+import { actionCost, applyAction, illegalReason, matches, type CostOptions } from './room';
 import type { JobResult } from './scoring';
-import type { Action, ActionClass, Fault, RoomState } from './types';
+import type { Action, ActionClass, Fault, OptimalStep, RoomState } from './types';
+
+/** progress[path][step]: which steps of each clean solution are done. Path 0 is the par solution. */
+type Progress = boolean[][];
 
 export interface HistoryEntry {
   action: Action;
@@ -11,7 +14,7 @@ export interface HistoryEntry {
   message?: string;
   undone?: boolean;
   /** Snapshot for undo. */
-  before: { room: RoomState; doneSteps: boolean[]; bonusEarned: boolean };
+  before: { room: RoomState; progress: Progress; bonusEarned: boolean };
 }
 
 export interface JobState {
@@ -19,12 +22,16 @@ export interface JobState {
   room: RoomState;
   minutes: number;
   history: HistoryEntry[];
-  doneSteps: boolean[];
+  progress: Progress;
   wasted: number;
   harmful: number;
   usedHint: boolean;
   bonusEarned: boolean;
   goalMet: boolean;
+}
+
+export function solutions(fault: Fault): OptimalStep[][] {
+  return [fault.optimal, ...(fault.alternatives ?? [])];
 }
 
 export function startJob(fault: Fault): JobState {
@@ -34,7 +41,7 @@ export function startJob(fault: Fault): JobState {
     room,
     minutes: 0,
     history: [],
-    doneSteps: fault.optimal.map(() => false),
+    progress: solutions(fault).map((p) => p.map(() => false)),
     wasted: 0,
     harmful: 0,
     usedHint: false,
@@ -45,9 +52,14 @@ export function startJob(fault: Fault): JobState {
 
 export type ActResult = { ok: true; job: JobState; entry: HistoryEntry } | { ok: false; reason: string };
 
-export function act(job: JobState, action: Action, opts: { askCost?: number } = {}): ActResult {
+export interface ActOptions extends CostOptions {
+  /** Items at hand (kit plus house items). Omit to allow every item. */
+  available?: string[];
+}
+
+export function act(job: JobState, action: Action, opts: ActOptions = {}): ActResult {
   const { fault } = job;
-  const reason = illegalReason(fault, job.room, action);
+  const reason = illegalReason(fault, job.room, action, opts.available);
   if (reason) return { ok: false, reason };
 
   const before = job.room;
@@ -60,14 +72,24 @@ export function act(job: JobState, action: Action, opts: { askCost?: number } = 
   }
 
   let room = applyAction(before, action);
-  const doneSteps = [...job.doneSteps];
+  if (fault.rules) room = fault.rules(before, action, room);
+
+  const paths = solutions(fault);
+  const progress = job.progress.map((p) => [...p]);
+  let matchedStep = false;
+  paths.forEach((path, pi) => {
+    const si = path.findIndex((st, i) => !progress[pi][i] && matches(st.pattern, action, before));
+    if (si >= 0) {
+      progress[pi][si] = true;
+      matchedStep = true;
+    }
+  });
+
   let bonusEarned = job.bonusEarned;
   let { wasted, harmful } = job;
   let cls: ActionClass;
   let message: string | undefined;
-
   const harm = fault.harmful?.find((h) => matches(h.pattern, action, before));
-  const stepIdx = fault.optimal.findIndex((st, i) => !doneSteps[i] && matches(st.pattern, action, before));
 
   if (harm) {
     cls = 'harmful';
@@ -78,18 +100,25 @@ export function act(job: JobState, action: Action, opts: { askCost?: number } = 
     cls = 'bonus';
     bonusEarned = true;
     message = fault.bonus.message;
-  } else if (stepIdx >= 0) {
+  } else if (matchedStep) {
     cls = 'optimal';
-    doneSteps[stepIdx] = true;
   } else if (action.type === 'inspect' || action.type === 'ask') {
     cls = 'info';
   } else {
     cls = 'wasted';
     wasted++;
   }
+  // A harmful or bonus action never counts as progress.
+  const finalProgress = cls === 'optimal' ? progress : job.progress;
 
-  const minutes = action.type === 'ask' && opts.askCost !== undefined ? opts.askCost : actionCost(action);
-  const entry: HistoryEntry = { action, cls, minutes, message, before: { room: before, doneSteps: job.doneSteps, bonusEarned: job.bonusEarned } };
+  const minutes = actionCost(action, opts);
+  const entry: HistoryEntry = {
+    action,
+    cls,
+    minutes,
+    message,
+    before: { room: before, progress: job.progress, bonusEarned: job.bonusEarned },
+  };
   return {
     ok: true,
     entry,
@@ -98,7 +127,7 @@ export function act(job: JobState, action: Action, opts: { askCost?: number } = 
       room,
       minutes: job.minutes + minutes,
       history: [...job.history, entry],
-      doneSteps,
+      progress: finalProgress,
       wasted,
       harmful,
       bonusEarned,
@@ -107,19 +136,18 @@ export function act(job: JobState, action: Action, opts: { askCost?: number } = 
   };
 }
 
-/** Reverts the last action. Undo is never free: it costs the undone action's minutes again. */
-/** Wasted/harmful counts stay: undoing a mistake doesn't make the fix clean again. */
+/** Wasted/harmful counts stay: undoing a mistake doesn't make the fix clean again. Undo costs the time again. */
 export function undo(job: JobState): JobState | null {
   const idx = job.history.findLastIndex((e) => !e.undone);
   if (idx < 0) return null;
   const last = job.history[idx];
-  const { room, doneSteps, bonusEarned } = last.before;
+  const { room, progress, bonusEarned } = last.before;
   const history = [...job.history];
   history[idx] = { ...last, undone: true };
   return {
     ...job,
     room,
-    doneSteps,
+    progress,
     bonusEarned,
     minutes: job.minutes + last.minutes,
     history,
@@ -127,16 +155,40 @@ export function undo(job: JobState): JobState | null {
   };
 }
 
-/** "Call a Friend": the next step of the par solution. Halves the tip. */
+/** The solution the player is furthest along (ties go to par), and its next step. */
+export function nextStep(job: JobState): OptimalStep | null {
+  const paths = solutions(job.fault);
+  let best = 0;
+  let bestFrac = -1;
+  paths.forEach((path, pi) => {
+    const frac = job.progress[pi].filter(Boolean).length / path.length;
+    if (frac > bestFrac) {
+      best = pi;
+      bestFrac = frac;
+    }
+  });
+  const i = job.progress[best].findIndex((d) => !d);
+  return i >= 0 ? paths[best][i] : null;
+}
+
+/** "Call a Friend": the next step of the closest solution. Halves the tip. */
 export function takeHint(job: JobState): { job: JobState; hint: string } {
-  const i = job.doneSteps.findIndex((d) => !d);
-  const hint = i >= 0 ? job.fault.optimal[i].hint : "It should be working now. Try wrapping up the job.";
+  const step = nextStep(job);
+  const hint = job.goalMet || !step ? 'It should be working now. Try wrapping up the job.' : step.hint;
   return { job: { ...job, usedHint: true }, hint };
 }
 
-/** Par minutes = the cost of the optimal sequence. */
-export function parMinutes(fault: Fault): number {
-  return fault.optimal.reduce((sum, st) => sum + actionCost(st.pattern as Action), 0);
+export function pathMinutes(path: OptimalStep[], opts: CostOptions = {}): number {
+  return path.reduce((sum, st) => sum + actionCost(st.pattern as unknown as Action, opts), 0);
+}
+
+/** Par minutes = the cost of the par solution. */
+export function parMinutes(fault: Fault, opts: CostOptions = {}): number {
+  return pathMinutes(fault.optimal, opts);
+}
+
+export function bonusMinutes(fault: Fault, opts: CostOptions = {}): number {
+  return fault.bonus ? actionCost(fault.bonus.pattern as unknown as Action, opts) : 0;
 }
 
 export function jobResult(
