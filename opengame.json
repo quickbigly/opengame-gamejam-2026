@@ -1,10 +1,10 @@
 {
   "$schema": "https://opengame.io/schema/opengame.json",
-  "title": "Snowbound Signal",
+  "title": "Boxed In",
   "description": "auto",
   "genre": "auto",
   "kind": "game",
-  "build": { "command": "npm run build", "output": "dist" },
+  "build": { "command": "powershell -NoProfile -ExecutionPolicy Bypass -File dev.ps1 -Web", "output": "build/web" },
   "controls": ["mouse", "keyboard"],
   "requires": { "desktopOnly": true }
 }

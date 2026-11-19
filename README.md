@@ -1,23 +1,22 @@
-# Snowbound Signal
+# Boxed In
 
-A cozy winter puzzle and management game for the OpenGame Game Jam 2026. You're a snowed-in town's only TV and gadget fixer, the night before the festival broadcast.
+A ball-trapping arcade puzzler with roguelite upgrades, made in Godot for the OpenGame Game Jam 2026. Grow walls to split the field, box every ball into a small enough pen, and level up into a new build each run.
 
 - Design: [docs/design.md](docs/design.md)
-- Puzzle content: [docs/fault-library.md](docs/fault-library.md)
+- Build plan: [docs/plan.md](docs/plan.md)
 - Jam rules: [docs/jam-rules.md](docs/jam-rules.md)
 
-## Develop
+## Develop (Windows, command line only)
 
-```sh
-npm install
-npm run dev      # local dev server
-npm test         # unit tests
-npm run build    # static build to dist/
+`dev.cmd` drives a portable Godot 4.7.2. On first use it downloads Godot (about 85 MB) and the web export templates (a 1.3 GB archive, of which only the two single-threaded web templates, about 20 MB, are kept) into `.tools\`, which is git-ignored. Nothing is installed system-wide.
+
+```bat
+dev -Setup        :: fetch Godot and the web templates, import the project
+dev               :: play in a window
+dev -Test         :: headless tests (exit code 1 on any failure)
+dev -Web          :: export the web build to build\web
+dev -Editor       :: open the Godot editor
+dev -Godot ...    :: run Godot's console binary with any arguments
 ```
 
-In dev:
-
-- `http://localhost:5173/?fault=f07` jumps straight into any fault (`f01` to `f20`, plus the callback `cb12`) with the full kit.
-- `http://localhost:5173/?night=3` starts that night with 200 coins; add `&callbacks` to bring in every Night 3 callback.
-
-`npm run par` prints the balance report: Par for every night, with and without upgrades and callbacks, and the Par route.
+From PowerShell, use `.\dev.cmd` or `.\dev.ps1`. `opengame check --build` runs the web export itself (see `opengame.json`).

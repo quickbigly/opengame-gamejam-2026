@@ -1,8 +1,15 @@
-node_modules/
-dist/
+# Godot
+.godot/
+.tools/
+build/
+*.translation
+
+# OpenGame CLI state
+.opengame/
+
+# OS and local
 *.local
 .env
 .env.*
 .DS_Store
 Thumbs.db
-.opengame/
