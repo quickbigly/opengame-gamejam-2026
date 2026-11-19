@@ -1,0 +1,30 @@
+:root {
+  --night: #0f1a2e;
+  --night-2: #1a2a47;
+  --amber: #f4b860;
+  --snow: #eef3fb;
+  --ink: #e8eef8;
+  --muted: #9fb0cc;
+  --line-picture: #4da3ff;
+  --line-sound: #ff9a3c;
+  --line-internet: #4cd28a;
+  --line-control: #b48cff;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  color: var(--ink);
+  background: var(--night);
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body { background: radial-gradient(ellipse at top, var(--night-2), var(--night) 70%); overflow: hidden; }
+
+.title-screen { position: relative; height: 100%; display: grid; place-items: center; }
+.snowfall { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.title-card { position: relative; text-align: center; max-width: 560px; padding: 2rem; }
+.title-card h1 { font-size: 3.5rem; margin: 0 0 0.5rem; color: var(--snow); text-shadow: 0 0 24px rgba(244, 184, 96, 0.45); }
+.title-card p { color: var(--muted); line-height: 1.5; }
+.title-card button {
+  margin-top: 1.5rem; padding: 0.75rem 1.75rem; font-size: 1.1rem; border-radius: 999px;
+  border: 2px solid var(--amber); background: transparent; color: var(--amber); cursor: pointer;
+}
+.title-card button:disabled { opacity: 0.5; cursor: default; }
