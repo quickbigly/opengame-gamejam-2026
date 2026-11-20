@@ -34,12 +34,35 @@ Each milestone ends with something playable. Anything not done by its date gets 
 
 ## M3: Variety and Balance (Dec 1–5)
 
-- [ ] Ball types: Swift, Big, Splitter, Drifter.
-- [ ] Remaining upgrades, including Actives (Freeze, Repel) and the epics.
-- [ ] Endless mode.
-- [ ] Balance bot: a headless seeded player at three skill tiers. Report clear rate per stage and the most picked and strongest upgrades.
-- [ ] Tune the stage table and upgrade values from the bot report and real runs.
-- **Exit:** a typical run reaches stage 6–9, and a good run wins.
+- [x] Ball types: Swift, Big, Splitter, Drifter.
+- [x] Remaining upgrades: Hardened Tip, Crossbeam (the last epic), and the actives Freeze and Repel (Q, one slot, recharged by walls). 20 upgrades in all.
+- [x] Endless mode, offered on the victory screen.
+- [x] Balance bot: a headless seeded player at three skill tiers, plus random clicking. It foresees 0, 1 or 2 bounces by tier, pauses to decide between walls, uses actives and Crossbeam. `dev -Balance` reports where runs end and each stage's clear rate, time, walls and lives lost: [balance.md](balance.md). `dev -Balance --strength` measures each upgrade on paired seeds: [upgrade-strength.md](upgrade-strength.md).
+- [x] Tune the stage table and upgrade values from the bot reports.
+- [ ] Check the tuning against real runs. Finished runs are logged to `user://runs.jsonl`; after a few unstaged runs (started from stage 1), `dev -Balance --real` shows them beside the bot tiers. If they disagree, recalibrate the bot tiers first, then retune. Until then every number here is provisional.
+- **Exit:** a typical run reaches stage 6–9, and a good run wins. On the bot (60 runs per tier): average median stage 9, 85% reach stage 6, 22% win; expert wins 97%; novice median stage 4; random clicking median stage 2 and never wins.
+
+Changes made from the bot reports, one at a time:
+
+| Change | Why | Effect |
+| --- | --- | --- |
+| Pen value counts locking a pen (bot fix) | The bot stalled on a pen 1.5 cells over its limit | No stalls |
+| Bot foresees 0/1/2 bounces by tier, slower reactions, pauses between walls | It read every bounce perfectly: stages cleared in 4 s, 100% expert wins | Calibration |
+| Clear bonus capped at 5 lives | Lives piled up; stages 6–12 cost nothing | Average wins 53% → 37% |
+| Stages 1–2 at 0.85× and 0.9× speed | 17% of novice runs ended on the one-ball stage 1 | Novice stage 1 losses 17% → 8–12% |
+| Ball speed ramps to 1.45× by stage 12 | Escalation (little effect alone: the bot waits for gaps) | ~same |
+| One more ball on stages 9, 11 and 12 | Late stages cost the average bot about 0.5 lives | Average wins 40% → 30% |
+| Stun fires when a whole wall finishes and nothing else is building | Freezing when a half set left balls frozen in the other half's path | Stun −0.3 lives a stage → +1.3 stages |
+| Hardened Tip: 2 shrugged-off hits per stage (was 1 per half) | Held from stage 1 it won every run | +4.4 stages, 100% wins → +3.0, 83% |
+| Twin Crews also +50% wall speed; Crossbeam + walls 30% faster; Repel turns every ball and recharges in 3; Auto-Lock 35%; Last Stretch 5 cells; Snug Reward ×2; Spare raises the life cap | Each added under one stage, or nothing (Twin Crews −0.3, Repel 0.0, Auto-Lock +0.2) | All now +0.7 to +3.2 stages |
+| XP growth 1.25 → 1.3 → 1.35 | Upgrades carry runs (none: median stage 5, no wins); the buffs above made them carry more | 8 upgrades a run; average median stage 12 → 9 |
+
+The strength report was measured at XP growth 1.3, just before the last change; the upgrades' standings relative to each other hold.
+
+Left for real runs and M5:
+
+- The bot clears stages in 4–25 s; people will take much longer. Time doesn't change difficulty (there's no timer), but the bot's reads are faster than a person's. The real-run check above is what makes these numbers trustworthy.
+- Freeze (+0.7) and Crossbeam (+0.8) are the weakest. The bot's use of both is simple (Freeze before long walls; crosses on a third as many cells as straight walls); people may get more out of them.
 
 ## M4: Feel, Look and Sound (Dec 6–11)
 

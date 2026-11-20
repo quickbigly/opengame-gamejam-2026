@@ -7,10 +7,13 @@ extends RefCounted
 ## Events are dictionaries with a "type" key:
 ##   wall_started   {wall_id, cell, vertical}
 ##   half_broken    {wall_id, rect, spared}  a ball hit a growing half; a life is lost unless spared
+##   half_shielded  {wall_id, rect}         a ball hit a growing half, which a shield saved
 ##   half_completed {wall_id, cells}         a half turned solid
 ##   captured       {wall_id, cells, regions}  empty regions were filled
 ##   wall_finished  {wall_id, cells, regions}  no half of the wall is still growing; totals for it
 ##   pen_locked     {region, area, limit}
+##   ball_split     {position}              a Splitter became two balls
+##   active_used    {id, at}                the active ability fired (at: cell position)
 ##   cleared        {}                       every ball is in a locked pen
 ##   game_over      {}
 
@@ -21,6 +24,13 @@ const WALL_SPEED := 14.0  # cells per second, per half
 const START_LIVES := 3
 ## Balls spawn at least this far apart, in cells, when there's room.
 const SPAWN_SPACING := 6.0
+## A Splitter splits once its region is smaller than this fraction of the playable area.
+const SPLIT_FRACTION := 0.5
+## After a shield saves a half, the half ignores balls this long so the ball can get clear.
+const SHIELD_GRACE := 0.3
+const FREEZE_TIME := 3.0
+## A + wall's halves (Crossbeam) grow this much faster than a plain wall's.
+const CROSS_SPEED := 1.3
 
 
 ## A region with balls in it, measured against its limit.
@@ -53,12 +63,27 @@ var max_walls := 1
 var wall_speed := WALL_SPEED
 ## A half this many cells or fewer from finishing completes at once.
 var last_stretch := 0.0
-## Balls freeze this long whenever a half turns solid.
+## Balls freeze this long whenever a wall finishes with no other wall still building, so a
+## frozen ball can never sit in a growing half's path.
 var stun_time := 0.0
 ## Ball hits on growing halves that don't cost a life.
 var close_calls := 0
 ## A pen locks when its area is within this fraction over its limit.
 var auto_lock := 0.0
+## Ball hits on growing halves left to shrug off this stage (Hardened Tip): the ball bounces off
+## and the half keeps growing.
+var shield_hits := 0
+## Walls can be built as a + (four halves).
+var crossbeam := false
+## The active ability ("freeze", "repel" or ""), and how many walls it takes to recharge.
+var active := ""
+var active_cost := 0
+## Walls completed since the active was last used; it's ready at active_cost.
+var active_charge := 0
+
+## Seconds of play so far, and walls started (for run stats and the balance bot).
+var time := 0.0
+var walls_started := 0
 
 var _next_wall_id := 0
 var _events: Array[Dictionary] = []
@@ -74,16 +99,19 @@ func _init(limit_fraction: float, start_lives := START_LIVES, board_grid: Grid =
 	_update_pens()
 
 
-## Places balls at random open cell centres, moving diagonally in random directions.
-func spawn_balls(count: int, rng: RandomNumberGenerator, speed := Ball.DEFAULT_SPEED, radius := Ball.DEFAULT_RADIUS) -> void:
+## Places balls at random open cell centres, moving diagonally in random directions. The first
+## balls take their kinds from `kinds` (Ball.Kind values); the rest are Basic.
+func spawn_balls(count: int, rng: RandomNumberGenerator, speed := Ball.DEFAULT_SPEED, radius := Ball.DEFAULT_RADIUS, kinds: Array = []) -> void:
 	for i in count:
+		var kind: Ball.Kind = kinds[i] if i < kinds.size() else Ball.Kind.BASIC
+		var kind_radius := radius * (Ball.BIG_RADIUS if kind == Ball.Kind.BIG else 1.0)
 		var best := Vector2.ZERO
 		var best_gap := -1.0
 		for attempt in 40:
 			var cell := Vector2i(rng.randi_range(1, grid.width - 2), rng.randi_range(1, grid.height - 2))
-			if grid.is_filled(cell):
-				continue
 			var at := Vector2(cell) + Vector2(0.5, 0.5)
+			if grid.is_filled(cell) or Ball.new(at, Vector2.ZERO, kind_radius).overlaps_filled(grid, at):
+				continue
 			var gap := INF
 			for other in balls:
 				gap = minf(gap, at.distance_to(other.position))
@@ -94,7 +122,8 @@ func spawn_balls(count: int, rng: RandomNumberGenerator, speed := Ball.DEFAULT_S
 				break
 		var x_sign := 1 if rng.randi() % 2 == 0 else -1
 		var y_sign := 1 if rng.randi() % 2 == 0 else -1
-		balls.append(Ball.new(best, Ball.diagonal(speed, x_sign, y_sign), radius))
+		var turn_sign := 1 if rng.randi() % 2 == 0 else -1
+		balls.append(Ball.of_kind(kind, best, Vector2(x_sign, y_sign), speed, radius, turn_sign))
 	_update_pens()
 
 
@@ -133,6 +162,33 @@ func is_frozen() -> bool:
 	return _freeze > 0.0
 
 
+func freeze_left() -> float:
+	return _freeze
+
+
+func active_ready() -> bool:
+	return active != "" and state == State.PLAYING and active_charge >= active_cost
+
+
+## Fires the active ability. `at` is the cursor, in cells. Returns false if it isn't ready.
+func use_active(at: Vector2) -> bool:
+	if not active_ready():
+		return false
+	match active:
+		"freeze":
+			_freeze = maxf(_freeze, FREEZE_TIME)
+		"repel":
+			for ball in balls:
+				var away := ball.position - at
+				if absf(away.x) > 0.01:
+					ball.velocity.x = absf(ball.velocity.x) * signf(away.x)
+				if absf(away.y) > 0.01:
+					ball.velocity.y = absf(ball.velocity.y) * signf(away.y)
+	active_charge = 0
+	_events.append({"type": "active_used", "id": active, "at": at})
+	return true
+
+
 func pen_for_region(region: int) -> Pen:
 	for pen in pens:
 		if pen.region == region:
@@ -153,17 +209,31 @@ func can_start_wall(cell: Vector2i) -> bool:
 	return true
 
 
+## The directions a wall's halves grow in. A cross (Crossbeam) grows all four ways.
+static func wall_directions(vertical: bool, cross := false) -> Array[Vector2i]:
+	if cross:
+		return [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]
+	if vertical:
+		return [Vector2i.UP, Vector2i.DOWN]
+	return [Vector2i.LEFT, Vector2i.RIGHT]
+
+
 ## Starts a wall at an open cell. Returns false if it can't be built there right now.
-func start_wall(cell: Vector2i, vertical: bool) -> bool:
+## `cross` builds a + wall, if Crossbeam allows it.
+func start_wall(cell: Vector2i, vertical: bool, cross := false) -> bool:
 	if not can_start_wall(cell):
 		return false
+	cross = cross and crossbeam
 	var id := _next_wall_id
 	_next_wall_id += 1
-	var axis := Vector2i.DOWN if vertical else Vector2i.RIGHT
-	halves.append(WallHalf.new(id, cell, -axis))
-	halves.append(WallHalf.new(id, cell, axis))
-	_wall_stats[id] = {"cells": 0, "regions": 0}
-	_events.append({"type": "wall_started", "wall_id": id, "cell": cell, "vertical": vertical})
+	walls_started += 1
+	for direction in wall_directions(vertical, cross):
+		var half := WallHalf.new(id, cell, direction)
+		if cross:
+			half.speed = CROSS_SPEED
+		halves.append(half)
+	_wall_stats[id] = {"cells": 0, "regions": 0, "solid": 0}
+	_events.append({"type": "wall_started", "wall_id": id, "cell": cell, "vertical": vertical, "cross": cross})
 	return true
 
 
@@ -171,6 +241,8 @@ func start_wall(cell: Vector2i, vertical: bool) -> bool:
 func step(dt := STEP) -> void:
 	if state == State.GAME_OVER:
 		return
+	if state == State.PLAYING:
+		time += dt
 	if _freeze > 0.0:
 		_freeze = maxf(0.0, _freeze - dt)
 	else:
@@ -181,8 +253,19 @@ func step(dt := STEP) -> void:
 
 	var completed: Array[WallHalf] = []
 	for half in halves:
-		var done := half.grow(grid, wall_speed * dt, last_stretch)
-		if _ball_touches(half.rect()):
+		var done := half.grow(grid, wall_speed * half.speed * dt, last_stretch)
+		var touched := _ball_touches(half.rect())
+		if half.grace > 0.0:
+			half.grace = maxf(0.0, half.grace - dt)
+			if touched:
+				continue  # the deflected ball is still getting clear; don't set over it
+		if touched and shield_hits > 0:
+			shield_hits -= 1
+			half.grace = SHIELD_GRACE
+
+			_deflect_from(half.rect())
+			_events.append({"type": "half_shielded", "wall_id": half.wall_id, "rect": half.rect()})
+		elif touched:
 			half.state = WallHalf.State.BROKEN
 			var spared := close_calls > 0
 			if spared:
@@ -215,12 +298,31 @@ func _ball_touches(rect: Rect2) -> bool:
 	return false
 
 
+## Bounces every ball touching the rect away from it, as if it were solid.
+func _deflect_from(rect: Rect2) -> void:
+	for ball in balls:
+		if not ball.overlaps_rect(rect):
+			continue
+		var away := ball.position - ball.position.clamp(rect.position, rect.end)
+		if away.length_squared() < 0.000001:
+			# The centre is inside the half: leave across its short side.
+			away = ball.position - rect.get_center()
+			if rect.size.x > rect.size.y:
+				away.x = 0.0
+			else:
+				away.y = 0.0
+		if absf(away.x) > absf(away.y):
+			ball.velocity.x = absf(ball.velocity.x) * signf(away.x)
+		else:
+			ball.velocity.y = absf(ball.velocity.y) * signf(away.y)
+
+
 func _solidify(half: WallHalf) -> void:
 	var cells := half.cells(grid)
 	half.state = WallHalf.State.SOLID
 	grid.fill_cells(cells)
-	if stun_time > 0.0:
-		_freeze = stun_time
+	if _wall_stats.has(half.wall_id):
+		_wall_stats[half.wall_id]["solid"] += 1
 	_events.append({"type": "half_completed", "wall_id": half.wall_id, "cells": cells})
 	_capture(half.wall_id)
 
@@ -257,7 +359,24 @@ func _capture(wall_id: int) -> void:
 	for half in halves:
 		if half.is_growing() and grid.is_filled(half.origin) and grid.is_filled(half.origin + half.direction):
 			half.state = WallHalf.State.SOLID
+	_split_splitters()
 	_update_pens()
+
+
+## Splits each Splitter whose region has dropped below SPLIT_FRACTION of the field into two
+## Basic balls heading apart.
+func _split_splitters() -> void:
+	for ball in balls.duplicate():
+		if ball.kind != Ball.Kind.SPLITTER:
+			continue
+		var region := regions.region_at(ball.cell())
+		if region == Grid.Regions.NONE or regions.area(region) >= grid.playable_area * SPLIT_FRACTION:
+			continue
+		balls.erase(ball)
+		for x_flip in [1.0, -1.0]:
+			var heading := Vector2(ball.velocity.x * x_flip, ball.velocity.y)
+			balls.append(Ball.of_kind(Ball.Kind.BASIC, ball.position, heading, ball.velocity.length(), ball.radius))
+		_events.append({"type": "ball_split", "position": ball.position})
 
 
 ## Reports each wall that has no half left growing.
@@ -271,6 +390,11 @@ func _finish_walls() -> void:
 			continue
 		var stats: Dictionary = _wall_stats[id]
 		_wall_stats.erase(id)
+		if stats["solid"] > 0 and active != "":
+			active_charge = mini(active_charge + 1, active_cost)
+		if stats["solid"] > 0 and stun_time > 0.0 and growing.is_empty() and state == State.PLAYING:
+			_freeze = maxf(_freeze, stun_time)
+
 		_events.append({"type": "wall_finished", "wall_id": id, "cells": stats["cells"], "regions": stats["regions"]})
 
 

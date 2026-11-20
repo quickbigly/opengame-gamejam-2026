@@ -74,14 +74,19 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_LEFT:
-			board.start_wall(_cell_at(get_local_mouse_position()), vertical)
+			board.start_wall(_cell_at(get_local_mouse_position()), vertical, event.shift_pressed)
 			get_viewport().set_input_as_handled()
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
 			vertical = not vertical
 			get_viewport().set_input_as_handled()
-	elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_SPACE:
-		vertical = not vertical
-		get_viewport().set_input_as_handled()
+	elif event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_SPACE:
+			vertical = not vertical
+			get_viewport().set_input_as_handled()
+		elif event.keycode == KEY_Q:
+			var at := (get_local_mouse_position() - FIELD_ORIGIN) / CELL
+			board.use_active(at)
+			get_viewport().set_input_as_handled()
 
 
 func _cell_at(point: Vector2) -> Vector2i:
@@ -136,14 +141,17 @@ func _draw_cells() -> void:
 func _draw_preview() -> void:
 	if board.state != Board.State.PLAYING or board.grid.is_filled(hover_cell):
 		return
-	var axis := Vector2i.DOWN if vertical else Vector2i.RIGHT
-	var back := WallHalf.new(0, hover_cell, -axis)
-	var front := WallHalf.new(0, hover_cell, axis)
-	back.length = back.target_length(board.grid)
-	front.length = front.target_length(board.grid)
+	var cross := board.crossbeam and Input.is_key_pressed(KEY_SHIFT)
 	var color := COLOR_PREVIEW if board.can_start_wall(hover_cell) else COLOR_PREVIEW_BLOCKED
-	draw_rect(_rect_to_screen(back.rect().merge(front.rect())), color)
-	draw_rect(_rect_to_screen(Rect2(hover_cell, Vector2.ONE)), Color(color, color.a * 2.0), false, 2.0)
+	for direction in Board.wall_directions(vertical, cross):
+		var half := WallHalf.new(0, hover_cell, direction)
+		half.length = half.target_length(board.grid)
+		# Each half without its origin cell, which is painted once below.
+		var back_side: Side = {Vector2i.RIGHT: SIDE_LEFT, Vector2i.LEFT: SIDE_RIGHT, Vector2i.DOWN: SIDE_TOP, Vector2i.UP: SIDE_BOTTOM}[direction]
+		draw_rect(_rect_to_screen(half.rect().grow_side(back_side, -1.0)), color)
+	var origin := _rect_to_screen(Rect2(hover_cell, Vector2.ONE))
+	draw_rect(origin, color)
+	draw_rect(origin, Color(color, color.a * 2.0), false, 2.0)
 
 
 func _draw_halves() -> void:
@@ -151,6 +159,8 @@ func _draw_halves() -> void:
 		var color := COLOR_HALF_A if half.direction.x + half.direction.y < 0 else COLOR_HALF_B
 		var rect := _rect_to_screen(half.rect())
 		draw_rect(rect, color)
+		if board.shield_hits > 0:
+			draw_rect(rect.grow(2.0), COLOR_TEXT, false, 2.0)  # shielded (Hardened Tip): outlined
 		# Stripes across the half, so a growing wall never reads by colour alone.
 		var along := Vector2(half.direction).abs()
 		var span := rect.size.dot(along)
@@ -162,12 +172,28 @@ func _draw_halves() -> void:
 			offset += stripe
 
 
+## Each special ball has its own mark, so kinds never read by colour alone.
 func _draw_balls() -> void:
 	for ball in board.balls:
 		var color := COLOR_BALL_LOCKED if ball.locked else COLOR_BALL
 		if board.is_frozen():
 			color = color.lerp(COLOR_HALF_A, 0.5)
-		draw_circle(_to_screen(ball.position), ball.radius * CELL, color, true, -1.0, true)
+		var at := _to_screen(ball.position)
+		var r := ball.radius * CELL
+		var heading := ball.velocity.normalized()
+		match ball.kind:
+			Ball.Kind.SWIFT:
+				for i in 3:
+					draw_circle(at - heading * r * (1.2 + i * 0.9), r * (0.55 - i * 0.15), Color(color, 0.45 - i * 0.12), true, -1.0, true)
+			Ball.Kind.BIG:
+				draw_circle(at, r + 3.0, Color(color, 0.25), false, 2.0, true)
+		draw_circle(at, r, color, true, -1.0, true)
+		match ball.kind:
+			Ball.Kind.SPLITTER:
+				var across := heading.orthogonal() * r
+				draw_line(at - across, at + across, COLOR_BACKGROUND, 2.0, true)
+			Ball.Kind.DRIFTER:
+				draw_circle(at, r * 0.45, COLOR_BACKGROUND, true, -1.0, true)
 
 
 func _draw_pen_meters() -> void:
@@ -186,7 +212,8 @@ func _draw_hud() -> void:
 	var top := 28.0
 	var bottom := 52.0
 
-	draw_string(_font, Vector2(left, top), "Stage %d / %d" % [run.stage, run.stage_count()], HORIZONTAL_ALIGNMENT_LEFT, -1, 22, COLOR_TEXT)
+	var stage_text := "Endless  %d" % (run.stage - run.stage_count()) if run.is_endless_stage() else "Stage %d / %d" % [run.stage, run.stage_count()]
+	draw_string(_font, Vector2(left, top), stage_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, COLOR_TEXT)
 	draw_string(_font, Vector2(left, top), Run.thousands(run.score), HORIZONTAL_ALIGNMENT_CENTER, width, 24, COLOR_TEXT)
 	var lives_color := COLOR_BAD if board.lives <= 1 else COLOR_TEXT
 	draw_string(_font, Vector2(left, top), "Lives  %d" % board.lives, HORIZONTAL_ALIGNMENT_RIGHT, width, 22, lives_color)
@@ -195,6 +222,17 @@ func _draw_hud() -> void:
 	draw_string(_font, Vector2(left, bottom), limit_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, COLOR_TEXT_DIM)
 	var boxed_text := "Boxed  %d / %d" % [board.locked_count(), board.balls.size()]
 	draw_string(_font, Vector2(left, bottom), boxed_text, HORIZONTAL_ALIGNMENT_RIGHT, width, 16, COLOR_TEXT_DIM)
+
+	# Below the field: the active ability and Crossbeam's key.
+	var below := FIELD_ORIGIN.y + board.grid.height * CELL + 24.0
+	if board.active != "":
+		var active_name: String = Upgrades.find(board.active)["name"]
+		var ready := board.active_ready()
+		var active_text := "Q  %s  ready" % active_name if ready else "Q  %s  %d / %d walls" % [active_name, board.active_charge, board.active_cost]
+		draw_string(_font, Vector2(left, below), active_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, COLOR_GOOD if ready else COLOR_TEXT_DIM)
+	if board.crossbeam:
+		draw_string(_font, Vector2(left, below), "Shift + click  Crossbeam", HORIZONTAL_ALIGNMENT_RIGHT, width, 16, COLOR_TEXT_DIM)
+
 
 	# XP bar, centred under the score.
 	var bar := Rect2(left + width * 0.5 - 120, bottom - 10, 240, 8)

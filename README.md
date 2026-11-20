@@ -14,6 +14,8 @@ A ball-trapping arcade puzzler with roguelite upgrades, made in Godot for the Op
 dev -Setup        :: fetch Godot and the web templates, import the project
 dev               :: play in a window
 dev -Test         :: headless tests (exit code 1 on any failure)
+dev -Balance      :: balance report: seeded bot runs at four skill tiers (--runs=N --out=docs/balance.md --real)
+dev -Balance --strength :: how much each upgrade helps, on paired seeds (--out=docs/upgrade-strength.md)
 dev -Web          :: export the web build to build\web
 dev -Editor       :: open the Godot editor
 dev -Godot ...    :: run Godot's console binary with any arguments

@@ -11,6 +11,10 @@ var direction: Vector2i
 ## Distance from the origin cell's centre to the tip, in cells.
 var length := 0.0
 var state := State.GROWING
+## Growth speed as a multiple of the board's wall speed (+ walls grow faster).
+var speed := 1.0
+## Seconds left in which ball hits are ignored, after a shield saved this half.
+var grace := 0.0
 
 
 func _init(id: int, start: Vector2i, dir: Vector2i) -> void:

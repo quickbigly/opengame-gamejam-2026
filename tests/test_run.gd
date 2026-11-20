@@ -30,8 +30,8 @@ func _wall(cells: int, regions: int) -> Dictionary:
 func test_stage_table_has_twelve_stages() -> void:
 	check_equal(StageTable.count(), 12, "stages")
 	check_equal(StageTable.stage(1)["balls"], 1, "stage 1 balls")
-	check_equal(StageTable.stage(12)["balls"], 7, "stage 12 balls")
-	check_equal(StageTable.stage(99), StageTable.stage(12), "past the end clamps to the finale")
+	check_equal(StageTable.stage(12)["balls"], 8, "stage 12 balls")
+	check(StageTable.stage(13)["limit"] < StageTable.stage(12)["limit"], "past the end is Endless, tighter")
 
 
 func test_start_stage_builds_the_stage_board() -> void:
@@ -76,12 +76,12 @@ func test_greed_and_study() -> void:
 func test_xp_levels_up_and_queues_picks() -> void:
 	var run := Run.new(1)
 	check_near(run.xp_needed(1), 5000.0, "level 1 needs the base")
-	check_near(run.xp_needed(2), 6250.0, "level 2 needs 25% more")
+	check_near(run.xp_needed(2), 6750.0, "level 2 needs 35% more")
 	run.start_stage()
 	run._add_points(12000)
 	check_equal(run.level, 3, "12000 XP passes two thresholds")
 	check_equal(run.pending_levels, 2, "two picks queued")
-	check_near(run.xp, 12000.0 - 5000.0 - 6250.0, "leftover XP")
+	check_near(run.xp, 12000.0 - 5000.0 - 6750.0, "leftover XP")
 
 
 func test_clearing_a_stage_scores_squeeze_and_clean_bonus() -> void:
@@ -154,15 +154,15 @@ func test_upgrades_change_the_board() -> void:
 	run.upgrades = {"quick_build": 2, "loose_fit": 1, "shrink": 1, "thick_air": 1, "twin_crews": 1,
 			"last_stretch": 1, "stun": 1, "close_call": 1, "auto_lock": 1}
 	var board := run.start_stage()
-	check_near(board.wall_speed, Board.WALL_SPEED * 1.44, "Quick Build")
+	check_near(board.wall_speed, Board.WALL_SPEED * 1.44 * 1.5, "Quick Build and Twin Crews")
 	check_near(board.pen_limit, 0.2 * 1.08, "Loose Fit")
 	check_near(board.balls[0].radius, Ball.DEFAULT_RADIUS * 0.9, "Shrink")
-	check_near(board.balls[0].velocity.length(), Ball.DEFAULT_SPEED * 0.92, "Thick Air", 0.01)
+	check_near(board.balls[0].velocity.length(), Ball.DEFAULT_SPEED * run.ball_speed() * 0.92, "Thick Air", 0.01)
 	check_equal(board.max_walls, 2, "Twin Crews")
-	check_near(board.last_stretch, 3.0, "Last Stretch")
-	check_near(board.stun_time, 0.75, "Stun")
+	check_near(board.last_stretch, 5.0, "Last Stretch")
+	check_near(board.stun_time, 1.0, "Stun")
 	check_equal(board.close_calls, 1, "Close Call")
-	check_near(board.auto_lock, 0.1, "Auto-Lock")
+	check_near(board.auto_lock, 0.35, "Auto-Lock")
 
 
 func test_close_call_spares_one_life() -> void:
@@ -192,18 +192,37 @@ func test_twin_crews_builds_two_walls() -> void:
 	check(not board.start_wall(Vector2i(10, 15), false), "not on a growing half")
 
 
-func test_stun_freezes_balls_when_a_half_sets() -> void:
+func test_stun_freezes_balls_when_a_wall_finishes() -> void:
 	var board := Board.new(0.2)
-	board.stun_time = 0.75
+	board.stun_time = 1.0
 	board.add_ball(Ball.new(Vector2(40.5, 15.5), Vector2(0, 10)))
 	board.start_wall(Vector2i(10, 1), true)  # the upper half sets within a few steps
 	while board.halves.size() == 2:
-		check(not board.is_frozen(), "not frozen before a half sets")
 		board.step()
-	check(board.is_frozen(), "frozen after a half sets")
+	check(not board.is_frozen(), "not frozen while the other half still grows")
+	while not board.halves.is_empty():
+		check(not board.is_frozen(), "still not frozen")
+		board.step()
+	check(board.is_frozen(), "frozen once the wall finishes")
 	var at := board.balls[0].position
 	board.step()
 	check_equal(board.balls[0].position, at, "the ball doesn't move while frozen")
+
+
+func test_stun_waits_while_another_wall_builds() -> void:
+	var board := Board.new(0.2)
+	board.stun_time = 1.0
+	board.max_walls = 2
+	board.add_ball(_still_ball(40.5, 25.5))
+	board.start_wall(Vector2i(10, 3), true)  # short: finishes first
+	board.start_wall(Vector2i(20, 15), true)  # long: still building then
+	var froze_early := false
+	while board.walls_building() > 0:
+		board.step()
+		if board.walls_building() == 1 and board.is_frozen():
+			froze_early = true
+	check(not froze_early, "no stun while the second wall builds")
+	check(board.is_frozen(), "stun once both are done")
 
 
 func test_last_stretch_finishes_short_halves_at_once() -> void:

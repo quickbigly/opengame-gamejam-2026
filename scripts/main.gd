@@ -1,14 +1,18 @@
 extends Node
 ## Runs the game's flow: title -> stage intro -> play -> stage clear -> upgrade picks -> next
-## stage, ending in victory after the last stage or game over.
+## stage, ending in victory after the last stage (with the offer to go on into Endless) or
+## game over. Each finished run is appended to RUN_LOG, so real runs can be compared with the
+## balance bot's (`dev -Balance --real`).
 ##
 ## Command-line options (after --, e.g. `dev --seed=42 --stage=6`):
 ##   --seed=N    seed for the run
-##   --stage=N   start the run at stage N (for testing)
+##   --stage=N   start the run at stage N (for testing; past the last stage is Endless)
 
 enum Screen { TITLE, INTRO, PLAYING, ENDING, CLEAR, PICK, OVER }
 
 const SAVE_PATH := "user://save.cfg"
+## One JSON line per finished run: Run.summary() plus the date and whether it was staged.
+const RUN_LOG := "user://runs.jsonl"
 ## Pause after the last pen locks or the last life goes, before the screen changes.
 const END_DELAY := 1.0
 const TITLE_BALLS := 3
@@ -33,7 +37,7 @@ func _ready() -> void:
 			continue
 		match parts[0]:
 			"seed": _seed = parts[1].to_int()
-			"stage": _start_stage = clampi(parts[1].to_int(), 1, StageTable.count())
+			"stage": _start_stage = clampi(parts[1].to_int(), 1, 99)
 
 	_field = preload("res://scenes/game/field.gd").new()
 	_field.board_event.connect(_on_board_event)
@@ -47,6 +51,7 @@ func _ready() -> void:
 	_screens.reroll_pressed.connect(_on_reroll)
 	_screens.again_pressed.connect(_start_run)
 	_screens.title_pressed.connect(_show_title)
+	_screens.endless_pressed.connect(_go_endless)
 
 	_load_best()
 	_show_title()
@@ -66,6 +71,7 @@ func _process(delta: float) -> void:
 			screen = Screen.CLEAR
 			_screens.show_clear(run, breakdown)
 	else:
+		run.fail_stage()
 		_show_end(false)
 
 
@@ -85,6 +91,7 @@ func _show_title() -> void:
 func _start_run() -> void:
 	run = Run.new(_seed)
 	run.stage = _start_stage
+	run.endless = StageTable.is_endless(_start_stage)
 	_seed = randi()
 	_begin_stage()
 
@@ -136,14 +143,34 @@ func _on_reroll() -> void:
 		_screens.show_pick(run)
 
 
+func _go_endless() -> void:
+	if screen != Screen.OVER or run == null:
+		return
+	run.endless = true
+	_after_clear()
+
+
 func _show_end(victory: bool) -> void:
 	screen = Screen.OVER
 	var new_best := run.score > _best_score
 	if new_best:
 		_best_score = run.score
-		_best_stage = run.stage
-		_save_best()
+	_best_stage = maxi(_best_stage, run.stage)
+	_save_best()
+	_log_run(victory)
 	_screens.show_end(run, victory, _best_score, new_best)
+
+
+func _log_run(victory: bool) -> void:
+	var file := FileAccess.open(RUN_LOG, FileAccess.READ_WRITE) if FileAccess.file_exists(RUN_LOG) else FileAccess.open(RUN_LOG, FileAccess.WRITE)
+	if file == null:
+		return
+	var entry := run.summary(victory)
+	entry["date"] = Time.get_datetime_string_from_system()
+	entry["staged"] = _start_stage != 1
+	file.seek_end()
+	file.store_line(JSON.stringify(entry))
+
 
 
 func _load_best() -> void:

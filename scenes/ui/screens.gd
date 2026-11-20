@@ -10,6 +10,7 @@ signal pick_pressed(index: int)
 signal reroll_pressed
 signal again_pressed
 signal title_pressed
+signal endless_pressed
 
 const COLOR_PANEL := Color("181d2b")
 const COLOR_PANEL_EDGE := Color("2c3550")
@@ -49,17 +50,27 @@ func show_title(best_score: int, best_stage: int) -> void:
 	box.add_child(_label("Box every ball into a pen small enough.\nNo clock. Just nerve.", 20, COLOR_TEXT_DIM))
 	box.add_child(_spacer(8))
 	if best_score > 0:
-		box.add_child(_label("Best  %s  (stage %d)" % [Run.thousands(best_score), best_stage], 18, COLOR_XP))
+		box.add_child(_label("Best  %s   ·   furthest  %s" % [Run.thousands(best_score), _stage_name(best_stage)], 18, COLOR_XP))
 	box.add_child(_button("Start run", start_pressed.emit))
 	_focus_first(box)
 
 
 func show_intro(run: Run) -> void:
-	var box := _open(560)
-	box.add_child(_label("Stage %d / %d" % [run.stage, run.stage_count()], 44, COLOR_TEXT))
+	var box := _open(600)
+	var title := _stage_name(run.stage) if run.is_endless_stage() else "Stage %d / %d" % [run.stage, run.stage_count()]
+	box.add_child(_label(title, 44, COLOR_TEXT))
 	var balls := run.ball_count()
 	var limit_cells := floori(run.pen_limit() * Grid.new().playable_area)
 	box.add_child(_label("%d ball%s   ·   pen limit %s per ball (%d cells)" % [balls, "s" if balls > 1 else "", Run.percent(run.pen_limit()), limit_cells], 20, COLOR_TEXT))
+	var fresh := StageTable.new_kinds(run.stage)
+	var shown := {}
+	for kind in run.ball_kinds():
+		if shown.has(kind):
+			continue
+		shown[kind] = true
+		var is_new: bool = fresh.has(kind)
+		var line := "%s%s: %s" % ["New!  " if is_new else "", Ball.KIND_NAMES[kind], Ball.KIND_TEXT[kind]]
+		box.add_child(_label(line, 17, COLOR_XP if is_new else COLOR_TEXT_DIM))
 	box.add_child(_label("Lives  %d" % run.lives, 20, COLOR_TEXT_DIM))
 	if run.stage <= 2:
 		box.add_child(_spacer(4))
@@ -101,8 +112,12 @@ func show_pick(run: Run) -> void:
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 16)
+	var held := run.active()
 	for i in run.offer.size():
-		var card := _card(Upgrades.find(run.offer[i]), run.stacks(run.offer[i]), i)
+		var replaces := ""
+		if Upgrades.is_active(run.offer[i]) and held != "" and held != run.offer[i]:
+			replaces = Upgrades.find(held)["name"]
+		var card := _card(Upgrades.find(run.offer[i]), run.stacks(run.offer[i]), i, replaces)
 		row.add_child(card)
 		_cards.append(card)
 	box.add_child(row)
@@ -112,7 +127,7 @@ func show_pick(run: Run) -> void:
 	box.add_child(reroll)
 	box.add_child(_label("1 / 2 / 3 to pick   ·   R to reroll", 14, COLOR_TEXT_DIM))
 	if not _cards.is_empty():
-		_cards[0].call_deferred("grab_focus")
+		_focus_later(_cards[0])
 
 
 func show_end(run: Run, victory: bool, best_score: int, new_best: bool) -> void:
@@ -122,7 +137,10 @@ func show_end(run: Run, victory: bool, best_score: int, new_best: bool) -> void:
 		box.add_child(_label("All %d stages boxed in." % run.stage_count(), 20, COLOR_TEXT))
 	else:
 		box.add_child(_label("Out of lives", 56, COLOR_BAD))
-		box.add_child(_label("Reached stage %d of %d" % [run.stage, run.stage_count()], 20, COLOR_TEXT))
+		if run.is_endless_stage():
+			box.add_child(_label("Reached %s" % _stage_name(run.stage), 20, COLOR_TEXT))
+		else:
+			box.add_child(_label("Reached stage %d of %d" % [run.stage, run.stage_count()], 20, COLOR_TEXT))
 	box.add_child(_label("Score  %s" % Run.thousands(run.score), 32, COLOR_TEXT))
 	if new_best:
 		box.add_child(_label("New best!", 20, COLOR_XP))
@@ -139,10 +157,20 @@ func show_end(run: Run, victory: bool, best_score: int, new_best: bool) -> void:
 	var buttons := HBoxContainer.new()
 	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
 	buttons.add_theme_constant_override("separation", 16)
+	if victory:
+		box.add_child(_label("Keep going in Endless: more balls, tighter pens, score is all that counts.", 16, COLOR_TEXT_DIM))
+		buttons.add_child(_button("Endless", endless_pressed.emit))
 	buttons.add_child(_button("Play again", again_pressed.emit))
 	buttons.add_child(_button("Title", title_pressed.emit))
 	box.add_child(buttons)
 	_focus_first(buttons)
+
+
+## "stage 7", or "Endless 3" for stage 15.
+static func _stage_name(number: int) -> String:
+	if StageTable.is_endless(number):
+		return "Endless %d" % (number - StageTable.count())
+	return "stage %d" % number
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -218,7 +246,7 @@ func _row(grid: GridContainer, title: String, value: int, color := COLOR_TEXT_DI
 	grid.add_child(right)
 
 
-func _card(upgrade: Dictionary, owned: int, index: int) -> Button:
+func _card(upgrade: Dictionary, owned: int, index: int, replaces := "") -> Button:
 	var card := Button.new()
 	card.custom_minimum_size = Vector2(260, 220)
 	card.pressed.connect(func() -> void: pick_pressed.emit(index))
@@ -238,6 +266,9 @@ func _card(upgrade: Dictionary, owned: int, index: int) -> Button:
 	box.add_child(_label(upgrade["text"], 17, COLOR_TEXT_DIM))
 	if upgrade["max"] > 1 and upgrade["max"] < 99:
 		box.add_child(_label("Owned %d / %d" % [owned, upgrade["max"]], 14, COLOR_TEXT_DIM))
+	if replaces != "":
+		box.add_child(_label("Replaces %s" % replaces, 14, COLOR_BAD))
+
 	for label in box.get_children():
 		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	return card
@@ -246,8 +277,16 @@ func _card(upgrade: Dictionary, owned: int, index: int) -> Button:
 func _focus_first(container: Control) -> void:
 	for child in container.get_children():
 		if child is Button:
-			child.call_deferred("grab_focus")
+			_focus_later(child)
 			return
+
+
+## Focuses a control at the end of the frame, unless another screen replaced it by then.
+static func _focus_later(control: Control) -> void:
+	var grab := func() -> void:
+		if is_instance_valid(control) and control.is_inside_tree():
+			control.grab_focus()
+	grab.call_deferred()
 
 
 func _make_theme() -> Theme:

@@ -15,6 +15,10 @@
 .EXAMPLE
     .\dev.ps1 -Test           # run the headless test suite (exit code 1 on any failure)
 .EXAMPLE
+    .\dev.ps1 -Balance        # balance report: seeded bot runs at each skill tier
+.EXAMPLE
+    .\dev.ps1 -Balance --runs=50 --out=docs/balance-latest.md
+.EXAMPLE
     .\dev.ps1 -Web            # export the web build to build\web
 .EXAMPLE
     .\dev.ps1 -Editor         # open the project in the Godot editor
@@ -27,6 +31,7 @@
 param(
     [switch]$Setup,
     [switch]$Test,
+    [switch]$Balance,
     [switch]$Web,
     [switch]$Editor,
     [switch]$Godot,
@@ -205,6 +210,8 @@ if ($Setup) {
     Export-Web
 } elseif ($Test) {
     & $GodotConsole --headless --path $ProjectDir --script res://tests/run_tests.gd
+} elseif ($Balance) {
+    & $GodotConsole --headless --path $ProjectDir --script res://scripts/dev/balance.gd -- @ExtraArgs
 } elseif ($Editor) {
     & $GodotExe --path $ProjectDir --editor
 } elseif ($ExtraArgs) {

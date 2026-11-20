@@ -1,6 +1,6 @@
 # Boxed In: Design Doc
 
-**Status:** draft v1 (2026-11-19). "Boxed In" is a working title.
+**Status:** draft v2 (2026-11-19, numbers from the M3 balance pass). "Boxed In" is a working title.
 
 **Jam:** OpenGame Game Jam 2026. Entries close **Dec 18, 11:59 pm PT**; our target is Dec 17. Rules: [jam-rules.md](jam-rules.md). Build plan: [plan.md](plan.md).
 
@@ -54,7 +54,7 @@ The genre and its core verb (grow walls to trap bouncing balls) are classic arca
 
 ### Lives
 
-- The run starts with **3 lives**. Clearing a level gives **+1 life**.
+- The run starts with **3 lives**. Clearing a level gives **+1 life, up to 5**. (Without the cap, lives piled up and stages 6–12 cost nothing. Each Spare raises the cap by 1.)
 - Losing your last life ends the run.
 - There's no timer, so a level can't be failed except by running out of lives.
 
@@ -68,31 +68,31 @@ The genre and its core verb (grow walls to trap bouncing balls) are classic arca
 | Clean clear | +25% of the level's score if no life was lost this level |
 
 - A **stage multiplier** of (1 + 0.15 × stage) applies to all points, so later stages are worth more.
-- **XP equals points.** Level *n* needs 5000 × 1.25^(n−1) XP. (The first guess, 800 × 1.3^(n−1), gave about five level-ups on stage 1 alone; this gives roughly one per stage. Tuned in M3.)
+- **XP equals points.** Level *n* needs 5000 × 1.35^(n−1) XP: about 5 upgrades in a novice's run, 8 in an average one and 10 in an expert's. (The first guess, 800 × 1.3^(n−1), gave about five level-ups on stage 1 alone.)
 - Level-ups during play are queued and shown with a small pip on the HUD. They're resolved on the level-clear screen, so play is never interrupted mid-wall.
 - Each level-up offers **3 upgrades; pick 1**. Several level-ups mean several picks in a row. Each pick comes with 1 reroll (more with the Reroll upgrade).
 
 ## 6. Run Structure
 
-- A run is **12 stages**. Stage 12 is the finale. Clearing it wins the run, and then you can keep going in **Endless**, where the pen limit keeps shrinking and score is all that matters.
-- Each new stage adds balls, tightens the pen limit and, from stage 4 on, mixes in special balls.
+- A run is **12 stages**. Stage 12 is the finale. Clearing it wins the run, and then you can keep going in **Endless**: each stage past 12 tightens the limit by 6% (to a floor of 2.5%), speeds the balls up by 0.02× (to 1.6×), adds a ball every other stage (to 10) and another special ball every other stage. Score is all that matters there.
+- Each new stage adds balls, speeds them up a little, tightens the pen limit and, from stage 4 on, mixes in special balls.
 
-| Stage | Balls | Pen limit (per ball, % of field) | New ball types |
-| --- | --- | --- | --- |
-| 1 | 1 | 20% | — |
-| 2 | 2 | 16% | — |
-| 3 | 2 | 12% | — |
-| 4 | 3 | 11% | Swift |
-| 5 | 3 | 10% | — |
-| 6 | 4 | 9% | Big |
-| 7 | 4 | 8% | — |
-| 8 | 5 | 7% | Splitter |
-| 9 | 5 | 6.5% | — |
-| 10 | 6 | 6% | Drifter |
-| 11 | 6 | 5.5% | — |
-| 12 | 7 | 5% | Finale: one of each |
+| Stage | Balls | Special balls among them | Speed | Pen limit (per ball, % of field) |
+| --- | --- | --- | --- | --- |
+| 1 | 1 | — | 0.85× | 20% |
+| 2 | 2 | — | 0.9× | 16% |
+| 3 | 2 | — | 1.0× | 12% |
+| 4 | 3 | Swift (new) | 1.05× | 11% |
+| 5 | 3 | Swift | 1.1× | 10% |
+| 6 | 4 | Big (new) | 1.15× | 9% |
+| 7 | 4 | Swift, Big | 1.2× | 8% |
+| 8 | 5 | Splitter (new) | 1.25× | 7% |
+| 9 | 6 | Swift, Splitter | 1.3× | 6.5% |
+| 10 | 6 | Drifter (new) | 1.35× | 6% |
+| 11 | 7 | Big, Drifter | 1.4× | 5.5% |
+| 12 | 8 | One of each | 1.45× | 5% |
 
-These numbers are a starting point for balancing (see plan, M3).
+Tuned on the balance bot (plan, M3; report in [balance.md](balance.md)). Stages 1–2 are slower so a first-time player isn't knocked out on the one-ball stage. The extra balls on stages 9, 11 and 12 are what make the late game cost lives. These are provisional until real runs agree.
 
 ### Ball types
 
@@ -101,29 +101,31 @@ These numbers are a starting point for balancing (see plan, M3).
 | Basic | Constant speed, standard size |
 | Swift | 1.5× speed |
 | Big | 2× radius, so it touches walls sooner and needs a bigger pen (counts as 1.5 balls toward a pen's limit) |
-| Splitter | Splits into two Basics the first time its region shrinks below half the field |
-| Drifter | Its path curves slowly, so straight-line reads lie |
+| Splitter | Splits into two Basics heading apart the first time its region shrinks below half the field |
+| Drifter | Its heading turns 0.5 rad/s (a turning circle wider than the field, so it always meets a wall), so straight-line reads lie |
+
+Each special ball has its own mark as well as its look (Swift: a trail; Big: a halo; Splitter: a line across; Drifter: a hollow centre), so kinds never read by colour alone. The stage intro names each kind in the stage and flags new ones.
 
 ## 7. Upgrades
 
-Upgrades come in three rarities: common, rare and epic. Most of them stack. Each offer shows three distinct upgrades, weighted by rarity. Starting list (about 20, trimmed or extended during balancing):
+Upgrades come in three rarities: common, rare and epic. Most of them stack. Each offer shows three distinct upgrades, weighted by rarity. Values below are from the M3 balance pass: each upgrade was measured by holding it from stage 1 against the same seeds without it ([upgrade-strength.md](upgrade-strength.md)), and the outliers were changed.
 
 **Walls**
 - **Quick Build** (C, stacks): walls grow 20% faster.
-- **Hardened Tip** (R): each half survives its first ball hit.
-- **Twin Crews** (E): two walls can build at once.
-- **Crossbeam** (E): hold Shift to build a + wall (four halves).
-- **Last Stretch** (R): a half within 3 cells of finishing completes instantly.
+- **Hardened Tip** (R): your walls shrug off the first 2 ball hits each stage; the ball bounces off and the half keeps growing. (Once per half, then once per wall, both won nearly every run.)
+- **Twin Crews** (E): two walls can build at once, and walls grow 50% faster. (Two walls alone did nothing: there's no clock to beat.)
+- **Crossbeam** (E): hold Shift to build a + wall (four halves), whose halves grow 30% faster.
+- **Last Stretch** (R): a half within 5 cells of finishing completes instantly.
 
 **Balls**
 - **Thick Air** (C, stacks): balls move 8% slower.
 - **Shrink** (C, stacks): balls are 10% smaller.
-- **Stun** (R): balls freeze for 0.75 s whenever a wall completes.
+- **Stun** (R): balls freeze for 1 s whenever a wall finishes, unless another wall is still building. (Freezing when a half set left balls frozen in the other half's path and cost lives.)
 
 **Squeeze**
 - **Loose Fit** (C, stacks): pen limit +8%.
-- **Snug Reward** (R, stacks): squeeze bonus ×1.5.
-- **Auto-Lock** (E): a region within 10% of its limit locks anyway.
+- **Snug Reward** (R, stacks): squeeze bonus ×2.
+- **Auto-Lock** (E): a pen up to 35% over its limit locks anyway.
 
 **Score and XP**
 - **Greed** (C, stacks): +15% points.
@@ -132,13 +134,14 @@ Upgrades come in three rarities: common, rare and epic. Most of them stack. Each
 - **Reroll** (C, stacks): +1 reroll per upgrade screen.
 
 **Survival**
-- **Spare** (C): +1 life now.
+- **Spare** (C, stacks): +1 life now, and stage clears top you up to 1 more (the 5-life cap rises by 1).
 - **Second Wind** (R): +1 more life per level clear.
 - **Close Call** (R): the first life you'd lose each level is spared.
 
 **Actives** (one active slot. Picking a second swaps it. Press **Q** to use. Charges refill as walls complete.)
 - **Freeze** (R): stop all balls for 3 s. 6 walls to recharge.
-- **Repel** (R): push balls away from the cursor. 4 walls to recharge.
+- **Repel** (R): every ball turns to head away from the cursor. 3 walls to recharge.
+- Each stage starts with the active ready. The HUD shows its charge under the field.
 
 ## 8. Screens and Flow
 
@@ -176,7 +179,8 @@ Title → Run start → Stage intro (balls, pen limit) → Play → Stage clear 
   - Autoloads: `Run` (run state), `Audio`, `Settings`.
   - `tests/`: a headless test runner (`dev -Test`) for the core logic.
 - **Determinism:** each run has a seed, so a run can be replayed for balancing and capture.
-- **Balance bot:** a headless simulated player that places walls with tunable skill. It's used to check that the stage table is clearable and the upgrades are not degenerate (plan, M3).
+- **Balance bot:** a headless simulated player (`scripts/core/bot.gd`) at four tiers: random clicking, novice, average and expert. It predicts ball paths and builds the wall that cuts the most space without being hit, within what that tier can foresee: novices read straight lines only, average players one bounce ahead, experts two. Tiers also differ in reaction time, margin, misclicks and patience. `dev -Balance` plays seeded runs and writes the report (plan, M3). With Crossbeam it also weighs + walls. Between walls it pauses to decide, as a person would.
+- **Run log:** each finished run is appended to `user://runs.jsonl` (stage times, walls, lives lost, upgrades), and `dev -Balance --real` puts your unstaged runs beside the bot tiers.
 
 ## 12. Jam Checklist
 
