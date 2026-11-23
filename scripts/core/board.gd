@@ -6,12 +6,13 @@ extends RefCounted
 ##
 ## Events are dictionaries with a "type" key:
 ##   wall_started   {wall_id, cell, vertical}
-##   half_broken    {wall_id, rect, spared}  a ball hit a growing half; a life is lost unless spared
+##   half_broken    {wall_id, rect, spared, costs_life}  a ball hit a growing half. It costs a
+##                  life unless spared (Close Call) or the same ball just broke another half of it
 ##   half_shielded  {wall_id, rect}         a ball hit a growing half, which a shield saved
 ##   half_completed {wall_id, cells}         a half turned solid
 ##   captured       {wall_id, cells, regions}  empty regions were filled
 ##   wall_finished  {wall_id, cells, regions}  no half of the wall is still growing; totals for it
-##   pen_locked     {region, area, limit}
+##   pen_locked     {region, area, limit, cell}  cell: one cell inside the pen
 ##   ball_split     {position}              a Splitter became two balls
 ##   active_used    {id, at}                the active ability fired (at: cell position)
 ##   cleared        {}                       every ball is in a locked pen
@@ -31,6 +32,9 @@ const SHIELD_GRACE := 0.3
 const FREEZE_TIME := 3.0
 ## A + wall's halves (Crossbeam) grow this much faster than a plain wall's.
 const CROSS_SPEED := 1.3
+## For this long after a ball breaks or is shielded by a half, its touching the same wall's other
+## halves costs nothing more (a ball passing through the origin touches every half).
+const REPEAT_HIT_TIME := 0.5
 
 
 ## A region with balls in it, measured against its limit.
@@ -90,6 +94,8 @@ var _events: Array[Dictionary] = []
 var _freeze := 0.0
 ## Per wall still in progress: {cells, regions} captured so far.
 var _wall_stats := {}
+## Per wall: the last ball that hit it, until when that counts as the same hit, and what it did.
+var _wall_hits := {}
 
 
 func _init(limit_fraction: float, start_lives := START_LIVES, board_grid: Grid = null) -> void:
@@ -254,25 +260,34 @@ func step(dt := STEP) -> void:
 	var completed: Array[WallHalf] = []
 	for half in halves:
 		var done := half.grow(grid, wall_speed * half.speed * dt, last_stretch)
-		var touched := _ball_touches(half.rect())
+		var ball := _touching_ball(half.rect())
+		var touched := ball != null
 		if half.grace > 0.0:
 			half.grace = maxf(0.0, half.grace - dt)
 			if touched:
 				continue  # the deflected ball is still getting clear; don't set over it
-		if touched and shield_hits > 0:
+		# One ball costs a wall at most one shield or one life, however many of its halves it
+		# touches on one pass (they all cover the origin cell).
+		var previous: Dictionary = _wall_hits.get(half.wall_id, {})
+		var repeat: bool = touched and previous.get("ball") == ball and time < previous.get("until", 0.0)
+		if repeat and previous["kind"] == "shielded":
+			half.grace = SHIELD_GRACE
+		elif touched and not repeat and shield_hits > 0:
 			shield_hits -= 1
 			half.grace = SHIELD_GRACE
-
+			_wall_hits[half.wall_id] = {"ball": ball, "until": time + REPEAT_HIT_TIME, "kind": "shielded"}
 			_deflect_from(half.rect())
 			_events.append({"type": "half_shielded", "wall_id": half.wall_id, "rect": half.rect()})
 		elif touched:
 			half.state = WallHalf.State.BROKEN
-			var spared := close_calls > 0
+			var spared := not repeat and close_calls > 0
 			if spared:
 				close_calls -= 1
-			else:
+			elif not repeat:
 				lives -= 1
-			_events.append({"type": "half_broken", "wall_id": half.wall_id, "rect": half.rect(), "spared": spared})
+			if not repeat:
+				_wall_hits[half.wall_id] = {"ball": ball, "until": time + REPEAT_HIT_TIME, "kind": "broken"}
+			_events.append({"type": "half_broken", "wall_id": half.wall_id, "rect": half.rect(), "spared": spared, "costs_life": not repeat and not spared})
 		elif done:
 			completed.append(half)
 
@@ -291,11 +306,11 @@ func step(dt := STEP) -> void:
 	_finish_walls()
 
 
-func _ball_touches(rect: Rect2) -> bool:
+func _touching_ball(rect: Rect2) -> Ball:
 	for ball in balls:
 		if ball.overlaps_rect(rect):
-			return true
-	return false
+			return ball
+	return null
 
 
 ## Bounces every ball touching the rect away from it, as if it were solid.
@@ -390,6 +405,7 @@ func _finish_walls() -> void:
 			continue
 		var stats: Dictionary = _wall_stats[id]
 		_wall_stats.erase(id)
+		_wall_hits.erase(id)
 		if stats["solid"] > 0 and active != "":
 			active_charge = mini(active_charge + 1, active_cost)
 		if stats["solid"] > 0 and stun_time > 0.0 and growing.is_empty() and state == State.PLAYING:
@@ -432,7 +448,7 @@ func _update_pens() -> void:
 				newly_locked = true
 			ball.locked = pen.locked
 		if newly_locked:
-			_events.append({"type": "pen_locked", "region": pen.region, "area": pen.area, "limit": pen.limit})
+			_events.append({"type": "pen_locked", "region": pen.region, "area": pen.area, "limit": pen.limit, "cell": pen.balls[0].cell()})
 
 	if state == State.PLAYING and not balls.is_empty() and locked_count() == balls.size():
 		state = State.CLEARED

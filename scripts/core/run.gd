@@ -148,7 +148,7 @@ func handle_event(event: Dictionary) -> void:
 		"wall_finished":
 			_score_wall(event["cells"], event["regions"])
 		"half_broken":
-			if not event["spared"]:
+			if event["costs_life"]:
 				lives_lost += 1
 	if board:
 		lives = board.lives

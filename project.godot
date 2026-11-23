@@ -14,6 +14,16 @@ config/name="Boxed In"
 config/version="0.1.0"
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
+boot_splash/bg_color=Color(0.043137256, 0.05490196, 0.08627451, 1)
+boot_splash/image="res://art/splash.png"
+boot_splash/fullsize=false
+boot_splash/use_filter=false
+config/icon="res://art/icon.png"
+
+[autoload]
+
+Settings="*res://scripts/settings.gd"
+Audio="*res://scripts/audio.gd"
 
 [display]
 

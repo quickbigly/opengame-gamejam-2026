@@ -19,6 +19,10 @@
 .EXAMPLE
     .\dev.ps1 -Balance --runs=50 --out=docs/balance-latest.md
 .EXAMPLE
+    .\dev.ps1 -Sounds         # regenerate the synthesised sounds and music in audio/
+.EXAMPLE
+    .\dev.ps1 -Shots --out=C:/temp/shots   # screenshot tour of every screen
+.EXAMPLE
     .\dev.ps1 -Web            # export the web build to build\web
 .EXAMPLE
     .\dev.ps1 -Editor         # open the project in the Godot editor
@@ -32,6 +36,8 @@ param(
     [switch]$Setup,
     [switch]$Test,
     [switch]$Balance,
+    [switch]$Sounds,
+    [switch]$Shots,
     [switch]$Web,
     [switch]$Editor,
     [switch]$Godot,
@@ -210,6 +216,14 @@ if ($Setup) {
     Export-Web
 } elseif ($Test) {
     & $GodotConsole --headless --path $ProjectDir --script res://tests/run_tests.gd
+} elseif ($Sounds) {
+    & $GodotConsole --headless --path $ProjectDir --script res://scripts/dev/make_sounds.gd
+    if ($LASTEXITCODE -eq 0) {
+        # Import the new files now, so the next run sees them.
+        & $GodotConsole --headless --path $ProjectDir --import 2>&1 | Out-Null
+    }
+} elseif ($Shots) {
+    & $GodotConsole --path $ProjectDir res://scenes/dev/shots.tscn -- @ExtraArgs
 } elseif ($Balance) {
     & $GodotConsole --headless --path $ProjectDir --script res://scripts/dev/balance.gd -- @ExtraArgs
 } elseif ($Editor) {

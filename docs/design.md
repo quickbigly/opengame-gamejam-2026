@@ -37,6 +37,7 @@ The genre and its core verb (grow walls to trap bouncing balls) are classic arca
 - A wall grows from the click point in **both directions at once**, as two halves.
 - Each half grows until it reaches a filled cell, then turns solid.
 - **If a ball touches a half while it's still growing, that half breaks and you lose a life.** The other half keeps growing.
+- One ball costs a wall at most one life (or one shield) per pass. Every half covers the wall's start cell, so a ball that runs through it, or breaks one half and carries on into the other within 0.5 s, breaks them all for a single life. (Found in the M5 bug bash: it used to cost a life per half.)
 - One wall can be building at a time (upgrades can change this).
 
 ### Capturing
@@ -148,8 +149,9 @@ Upgrades come in three rarities: common, rare and epic. Most of them stack. Each
 Title → Run start → Stage intro (balls, pen limit) → Play → Stage clear (score breakdown, then queued upgrade picks) → next stage. Then either Game over (run summary, best score) or Victory after stage 12 (summary, then the Endless offer).
 
 - **Pause** with Esc or P: resume, restart run, settings, quit to title.
-- **Settings:** volume (master, music, effects), reduced motion, colour-blind-safe palette, show cursor grid.
-- **Tutorial:** stage 1 teaches walls, stage 2 teaches pens and the limit. Short, skippable overlays; no separate tutorial mode.
+- **Pause** also happens by itself when the window or the game's frame loses focus. Restart run and Quit to title ask for a second press.
+- **Settings:** volume (master, music, effects), reduced motion, colour-blind-safe palette, show grid, tutorial tips. One schema in `scripts/settings.gd` drives the screen, the defaults and the sanitiser; each change is saved at once. Reduced motion starts on if the browser asks for it.
+- **Tutorial:** tips over the bottom of the field on stages 1 and 2, one at a time, each until the player has done what it teaches (build, turn) or for a few seconds (danger, two balls). Tab hides them for good; they turn themselves off after stage 2, and the stage-clear screen says so. Settings can turn them back on. No separate tutorial mode.
 - **Saving:** best score, best stage and settings are saved locally. Runs aren't saved mid-run (stretch goal).
 
 ## 9. Controls
@@ -159,14 +161,16 @@ Title → Run start → Stage intro (balls, pen limit) → Play → Stage clear 
 | Build wall | Left-click |
 | Switch direction | Right-click or Space |
 | Use active | Q |
-| Pause | Esc or P |
+| Pause | Esc or P (or click outside the game) |
+| Hide tips | Tab |
 | Menus | Mouse, or arrows/Enter |
 
 ## 10. Look and Sound
 
-- **Look:** clean, flat, high-contrast shapes on a dark field with a soft glow. Each wall half has its own colour. Pens fill with a pulse when they lock. State never relies on colour alone: growing walls are striped and locked pens get an outline and an icon.
-- **Feel:** a crisp snap when a half completes, a satisfying sweep fill on capture, screen shake and a hit-stop when a wall breaks (all reduced by the reduced-motion setting).
-- **Sound:** short synthesized effects (build tick, snap, capture sweep, break, lock chime, level-up) and one or two simple music loops. All are made by us. The sponsor tools (ElevenLabs, fal, Meshy) are out of scope unless we decide otherwise.
+- **Look:** clean, flat, high-contrast shapes on a dark field with a soft additive glow on balls, growing walls and locked pens. Each wall half has its own colour (cyan for the half growing left or up, orange for right or down) with a bright tip. Open space has a rim where it meets a wall; a locked pen's rim turns green. The title is the game's name built from cells, with a box around "IN". State never relies on colour alone: growing walls have stripes that move outward, locked pens get a green rim, a padlock and a full meter bar, and each ball kind has its own mark. The colour-blind palette (Okabe–Ito) swaps red and green for vermilion, blue and yellow.
+- **HUD:** stage, score, lives as pips and the XP bar across the top; the limit and the boxed count under them. Left of the field: the controls, Crossbeam's key and the active ability (Q, its charge as segments). Right: the ball kinds in play. Each pen shows area / limit with a bar.
+- **Feel:** a white flash and glow along a half when it sets (snap), a sweep that lights captured cells outward from where the wall started, then fades into wall colour; a 90 ms hit-stop, a 7 px shake, a red border pulse and flying shards when a wall breaks; a pulse and a ring when a pen locks; floating score and combo text; a burst on level-up and on clear. Reduced motion turns off shake, rings, particles, moving stripes and the sweep's stagger. The full-screen flash is capped at 14% red, a luminance step of about 0.04.
+- **Sound:** synthesised by `dev -Sounds` (`scripts/dev/make_sounds.gd`, sine, triangle and filtered noise, seeded): 19 effects (interface move/select/back, wall start, turn, blocked, snap, capture, break, shield, lock, split, freeze, repel, level-up, clear, game over, victory, pick) and two loops (menu, 32 s, pads and bells; play, 40 s at 96 BPM, pads, bass, plucked arpeggio, soft kick, hats and a bell line in the second half). Effects vary in pitch by ±2.5%; captures pitch down as they get bigger; each pen that locks in a stage chimes a step higher on a pentatonic scale. Buses: Music and SFX into Master. All are made by us. The sponsor tools (ElevenLabs, fal, Meshy) are out of scope unless we decide otherwise. **Nobody has listened to them yet; levels were set by meter.**
 
 ## 11. Tech
 
@@ -176,7 +180,8 @@ Title → Run start → Stage intro (balls, pen limit) → Play → Stage clear 
   - `scripts/core/`: pure logic with no nodes, so it's testable headless. Grid and flood fill, pens, scoring, XP curve, stage table, upgrade data and effects, seeded RNG.
   - `scenes/game/`: the field (drawn with `_draw`), balls, walls and HUD.
   - `scenes/ui/`: title, stage intro, stage clear, upgrade pick, pause, settings, game over and victory.
-  - Autoloads: `Run` (run state), `Audio`, `Settings`.
+  - Autoloads: `Audio` and `Settings` (`scripts/`). The run's state is a plain `Run` object owned by `scripts/main.gd`.
+  - `scripts/dev/`: the balance report, the sound generator and the icon and splash generator. `scenes/dev/shots.tscn` (`dev -Shots`) is a scripted screenshot tour. None of these are exported.
   - `tests/`: a headless test runner (`dev -Test`) for the core logic.
 - **Determinism:** each run has a seed, so a run can be replayed for balancing and capture.
 - **Balance bot:** a headless simulated player (`scripts/core/bot.gd`) at four tiers: random clicking, novice, average and expert. It predicts ball paths and builds the wall that cuts the most space without being hit, within what that tier can foresee: novices read straight lines only, average players one bounce ahead, experts two. Tiers also differ in reaction time, margin, misclicks and patience. `dev -Balance` plays seeded runs and writes the report (plan, M3). With Crossbeam it also weighs + walls. Between walls it pauses to decide, as a person would.

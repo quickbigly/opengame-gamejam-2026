@@ -5,6 +5,7 @@ A ball-trapping arcade puzzler with roguelite upgrades, made in Godot for the Op
 - Design: [docs/design.md](docs/design.md)
 - Build plan: [docs/plan.md](docs/plan.md)
 - Jam rules: [docs/jam-rules.md](docs/jam-rules.md)
+- Playtest guide: [docs/playtest.md](docs/playtest.md)
 
 ## Develop (Windows, command line only)
 
@@ -16,9 +17,13 @@ dev               :: play in a window
 dev -Test         :: headless tests (exit code 1 on any failure)
 dev -Balance      :: balance report: seeded bot runs at four skill tiers (--runs=N --out=docs/balance.md --real)
 dev -Balance --strength :: how much each upgrade helps, on paired seeds (--out=docs/upgrade-strength.md)
+dev -Sounds       :: regenerate the synthesised sound effects and music in audio\
+dev -Shots --out=C:\temp\shots :: screenshot tour of every screen
 dev -Web          :: export the web build to build\web
 dev -Editor       :: open the Godot editor
 dev -Godot ...    :: run Godot's console binary with any arguments
 ```
+
+The icon and loading splash are drawn by `dev -Godot --headless --path . --script res://scripts/dev/make_art.gd`.
 
 From PowerShell, use `.\dev.cmd` or `.\dev.ps1`. `opengame check --build` runs the web export itself (see `opengame.json`).

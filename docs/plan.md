@@ -40,7 +40,7 @@ Each milestone ends with something playable. Anything not done by its date gets 
 - [x] Balance bot: a headless seeded player at three skill tiers, plus random clicking. It foresees 0, 1 or 2 bounces by tier, pauses to decide between walls, uses actives and Crossbeam. `dev -Balance` reports where runs end and each stage's clear rate, time, walls and lives lost: [balance.md](balance.md). `dev -Balance --strength` measures each upgrade on paired seeds: [upgrade-strength.md](upgrade-strength.md).
 - [x] Tune the stage table and upgrade values from the bot reports.
 - [ ] Check the tuning against real runs. Finished runs are logged to `user://runs.jsonl`; after a few unstaged runs (started from stage 1), `dev -Balance --real` shows them beside the bot tiers. If they disagree, recalibrate the bot tiers first, then retune. Until then every number here is provisional.
-- **Exit:** a typical run reaches stage 6–9, and a good run wins. On the bot (60 runs per tier): average median stage 9, 85% reach stage 6, 22% win; expert wins 97%; novice median stage 4; random clicking median stage 2 and never wins.
+- **Exit:** a typical run reaches stage 6–9, and a good run wins. On the bot before the M5 hit-rule fix (60 runs per tier; see M5 for after): average median stage 9, 85% reach stage 6, 22% win; expert wins 97%; novice median stage 4; random clicking median stage 2 and never wins.
 
 Changes made from the bot reports, one at a time:
 
@@ -66,18 +66,39 @@ Left for real runs and M5:
 
 ## M4: Feel, Look and Sound (Dec 6–11)
 
-- [ ] Art pass: palette, glow, wall stripes, pen lock animation, background.
-- [ ] Juice: snap, capture sweep, break shake and hit-stop, level-up burst. Respect reduced motion.
-- [ ] Synthesized sound effects and music loops, plus volume settings.
-- [ ] Title, pause, settings (colour-blind palette, reduced motion, grid toggle), keyboard menu navigation.
-- [ ] Stage 1–2 tutorial overlays.
-- **Exit:** it looks and sounds finished.
+- [x] Art pass: palette, glow, wall stripes, pen lock animation, background.
+- [x] Juice: snap, capture sweep, break shake and hit-stop, level-up burst. Respect reduced motion.
+- [x] Synthesized sound effects and music loops, plus volume settings.
+- [x] Title, pause, settings (colour-blind palette, reduced motion, grid toggle), keyboard menu navigation.
+- [x] Stage 1–2 tutorial overlays.
+- **Exit:** it looks and sounds finished. Done, except that nobody has listened to the sound yet (see M5). Details in the design doc (§8, §10).
+  - Look: `scripts/core/palette.gd` (default and colour-blind palettes), `scenes/game/field.gd` (additive glow layer, rims, moving stripes, padlocks and meter bars on pens, HUD columns), `scenes/ui/screens.gd` (cell wordmark, themed menus). Icon and loading splash from `scripts/dev/make_art.gd`.
+  - Juice and sound hooks are in `field.gd`'s `_on_event`. Reduced motion turns off shake, rings, particles, moving stripes and the sweep's stagger.
+  - Sound: `dev -Sounds` writes 19 effects and two loops (`audio/`, 0.9 MB in the build after Godot's QOA compression); `scripts/audio.gd` plays them on Music and SFX buses. Levels were set by meter only.
+  - Menus: one schema for settings (`scripts/settings.gd`), saved on each change; pause (Esc, P, or focus loss) with Restart and Quit asking twice; focus follows the pointer, arrows and Enter everywhere, Esc goes back.
+  - Tips: `scripts/core/tutorial.gd`. Tab hides them; they switch off after stage 2.
+  - `dev -Shots --out=<folder>` saves a screenshot of every screen.
 
 ## M5: Playtest and Harden (Dec 12–15)
 
-- [ ] Playtests by other people. Fix what they trip on.
-- [ ] Web build checks: load time, frame pacing, audio starting on the first click, focus and keys inside the OpenGame frame.
-- [ ] Bug bash: wall edge cases (a click on a wall, a ball inside a wall's start cell, a wall that closes two pens at once).
+- [ ] Playtests by other people. Fix what they trip on. **Needs people:** the guide is [playtest.md](playtest.md). It includes the first listen to the sound and the M3 real-run check.
+- [x] Web build checks: load time, frame pacing, audio starting on the first click, focus and keys inside the OpenGame frame.
+- [x] Bug bash: wall edge cases (a click on a wall, a ball inside a wall's start cell, a wall that closes two pens at once).
+
+Web build checks (Nov 19, Chrome 157, desktop RTX 3070 laptop, build served locally inside a cross-origin iframe standing in for the OpenGame frame; the test script is not in the repo):
+
+| Check | Result |
+| --- | --- |
+| `opengame check --build` | Passes, no findings. One notice: Godot's loader contains a browser `alert()`, which the game frame blocks; the game itself never calls it. |
+| Size | 39.5 MB `index.wasm` (10.1 MB gzipped), 0.9 MB `index.pck`, 0.3 MB `index.js`: about 11 MB over the wire if the host compresses. |
+| Load | 3.7–4.2 s from navigation to the title, served locally (so this is mostly compiling the wasm). On a 25 Mbit/s line, add about 3.5 s of download. The engine template can't be made smaller without a custom engine build. |
+| Frame pacing | 6 s of play with a wall building: median 8.3 ms (120 Hz display), 99th percentile 12.6 ms, worst 25 ms, no frame over 25 ms. |
+| Audio | The engine calls `AudioContext.resume()` on the first click and on the first key press inside the frame (traced). Whether sound is then heard can only be checked by ear: the automated browser grants activation by itself, so it can't reproduce a strict autoplay policy. |
+| Keys in the frame | After a click in the frame, Enter, Space, arrows, P and Esc all reach the game; Space and arrows don't scroll the host page. |
+| Pause | P and Esc pause and resume. Clicking the host page outside the frame pauses the game; clicking Resume in the frame resumes it. (Focus loss didn't pause at first: the web build sends a window focus event, not an application one. Fixed.) |
+| Errors | None from the game. One 404 for the host page's own favicon. |
+
+Bug bash: `tests/test_edge_cases.gd` (9 tests). Clicks on a growing wall, its origin, a finished wall, the border or off the field are refused; a wall that leaves two pens under their limits locks both at once (and clears the stage when they're the last); a wall in a one-cell gap fills once. One real bug: every half covers the wall's start cell, so a ball that ran through it broke both halves for **two** lives (four with Crossbeam), and also used up two Hardened Tip shields. Now one ball costs a wall at most one life or shield per pass (0.5 s). Balance after the fix ([balance.md](balance.md), same 60 seeds per tier): the game got easier, because the bots had been losing extra lives to this. Average: median stage 9 → 11, wins 22% → 37%, 85% → 92% reach stage 6. Novice: median stage 4 → 7, wins 5% → 7%. Expert is unchanged at 97% wins; random clicking still never wins (median stage 2 → 3). The average tier is now past the M3 target of a typical run ending on stage 6–9. **Not retuned yet:** whether to retune now or wait for real runs is an open decision.
 
 ## M6: Submit (Dec 16–17)
 
