@@ -6,6 +6,7 @@ A ball-trapping arcade puzzler with roguelite upgrades, made in Godot for the Op
 - Build plan: [docs/plan.md](docs/plan.md)
 - Jam rules: [docs/jam-rules.md](docs/jam-rules.md)
 - Playtest guide: [docs/playtest.md](docs/playtest.md)
+- Persona playtests (agents playing as different players): [docs/persona-playtest.md](docs/persona-playtest.md)
 
 ## Develop (Windows, command line only)
 
@@ -19,11 +20,24 @@ dev -Balance      :: balance report: seeded bot runs at four skill tiers (--runs
 dev -Balance --strength :: how much each upgrade helps, on paired seeds (--out=docs/upgrade-strength.md)
 dev -Sounds       :: regenerate the synthesised sound effects and music in audio\
 dev -Shots --out=C:\temp\shots :: screenshot tour of every screen
-dev -Web          :: export the web build to build\web
+dev -Web          :: export the web build to build\web, with receipt.json (file hashes)
+dev -WebTest      :: export the test build (state, stepped clock, plants) to build\web-test
 dev -Editor       :: open the Godot editor
 dev -Godot ...    :: run Godot's console binary with any arguments
 ```
 
+`dev -Godot --headless --path . --script res://scripts/dev/bench_capture.gd` times the slowest board step (a wall setting on a busy field).
+
 The icon and loading splash are drawn by `dev -Godot --headless --path . --script res://scripts/dev/make_art.gd`.
+
+Persona playtests in Chrome (after `npm install` in `testsrowser`):
+
+```bat
+cd testsrowser
+node run.mjs                  :: every scripted persona; report in out\<time>esults.md
+node run.mjs --only=P2,P4     :: some of them
+node run.mjs --prove          :: show that every check catches its planted defect
+node agent.mjs --persona=P2   :: a stepped session for an agent to play over HTTP
+```
 
 From PowerShell, use `.\dev.cmd` or `.\dev.ps1`. `opengame check --build` runs the web export itself (see `opengame.json`).

@@ -81,6 +81,7 @@ Left for real runs and M5:
 
 ## M5: Playtest and Harden (Dec 12–15)
 
+- [x] Persona playtests by agents first: [persona-playtest.md](persona-playtest.md). Round 1 results: [persona-results.md](persona-results.md). It fixed five bugs, including the stage-clearing wall never scoring, and left eight design questions open.
 - [ ] Playtests by other people. Fix what they trip on. **Needs people:** the guide is [playtest.md](playtest.md). It includes the first listen to the sound and the M3 real-run check.
 - [x] Web build checks: load time, frame pacing, audio starting on the first click, focus and keys inside the OpenGame frame.
 - [x] Bug bash: wall edge cases (a click on a wall, a ball inside a wall's start cell, a wall that closes two pens at once).

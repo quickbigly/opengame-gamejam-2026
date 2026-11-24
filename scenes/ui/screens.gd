@@ -291,6 +291,7 @@ func _setting_row(box: VBoxContainer, entry: Dictionary) -> Control:
 		name_label.autowrap_mode = TextServer.AUTOWRAP_OFF
 		row.add_child(name_label)
 		var slider := HSlider.new()
+		slider.set_meta("setting", key)
 		slider.min_value = 0
 		slider.max_value = 100
 		slider.step = 5
@@ -329,6 +330,7 @@ func _setting_row(box: VBoxContainer, entry: Dictionary) -> Control:
 		text_box.add_child(hint)
 	row.add_child(text_box)
 	var toggle := Button.new()
+	toggle.set_meta("setting", key)
 	toggle.toggle_mode = true
 	toggle.button_pressed = current
 	toggle.custom_minimum_size = Vector2(88, 40)
@@ -493,6 +495,7 @@ func _row(grid: GridContainer, title: String, value: int, color := Color.TRANSPA
 func _card(upgrade: Dictionary, owned: int, index: int, replaces := "") -> Button:
 	var card := Button.new()
 	card.custom_minimum_size = Vector2(260, 230)
+	card.set_meta("upgrade", upgrade["id"])
 	card.pressed.connect(func() -> void: pick_pressed.emit(index))
 	_wire_sounds(card, false)
 	var margin := MarginContainer.new()
@@ -516,12 +519,12 @@ func _card(upgrade: Dictionary, owned: int, index: int, replaces := "") -> Butto
 		box.add_child(_label("Replaces %s" % replaces, 14, Palette.c("bad")))
 	for label in box.get_children():
 		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	# A strip along the top in the rarity's colour (rarity is also named in text).
+	# A strip along the top, in the rarity's colour and thicker for rarer (rarity is also named).
 	var strip := ColorRect.new()
 	strip.color = rarity_color
 	strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	strip.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	strip.custom_minimum_size = Vector2(0, 4)
+	strip.custom_minimum_size = Vector2(0, 4 + 4 * rarity)
 	card.add_child(strip)
 	return card
 
@@ -553,9 +556,11 @@ func _make_theme() -> Theme:
 	panel.set_corner_radius_all(12)
 	panel.set_content_margin_all(32)
 	theme.set_stylebox("panel", "PanelContainer", panel)
+	# Focus: a thick outline in the text colour, which no other state or palette uses as a
+	# border, so it never reads as "On" or as a rarity.
 	var focus := StyleBoxFlat.new()
 	focus.draw_center = false
-	focus.border_color = Palette.c("focus")
+	focus.border_color = Palette.c("text")
 	focus.set_border_width_all(3)
 	focus.set_corner_radius_all(8)
 	focus.set_expand_margin_all(3)
@@ -566,10 +571,9 @@ func _make_theme() -> Theme:
 		style.set_corner_radius_all(8)
 		style.set_content_margin_all(12)
 		theme.set_stylebox(state, "Button", style)
+	# A switch that's on: a tinted fill and its "On" text, no border.
 	var pressed_on := StyleBoxFlat.new()
-	pressed_on.bg_color = Palette.c("button")
-	pressed_on.border_color = Palette.c("good")
-	pressed_on.set_border_width_all(2)
+	pressed_on.bg_color = Palette.c("button").lerp(Palette.c("good"), 0.3)
 	pressed_on.set_corner_radius_all(8)
 	pressed_on.set_content_margin_all(12)
 	theme.set_stylebox("pressed", "Button", pressed_on)
@@ -593,3 +597,37 @@ func _make_theme() -> Theme:
 	theme.set_stylebox("grabber_area", "HSlider", fill)
 	theme.set_stylebox("grabber_area_highlight", "HSlider", fill)
 	return theme
+
+
+## Every visible control a player can press or change, for the test state: its kind, text,
+## rectangle in canvas pixels, and whether it's focused or disabled.
+func controls() -> Array:
+	var found: Array = []
+	if _root.visible:
+		_collect_controls(_root, found)
+	return found
+
+
+func _collect_controls(node: Node, found: Array) -> void:
+	for child in node.get_children():
+		if child is Control and not (child as Control).is_visible_in_tree():
+			continue
+		if child is BaseButton or child is Range:
+			var control := child as Control
+			var rect := control.get_global_rect()
+			var entry := {"kind": control.get_class(), "rect": [roundi(rect.position.x), roundi(rect.position.y),
+				roundi(rect.size.x), roundi(rect.size.y)], "focused": control.has_focus()}
+			if child is Button:
+				entry["text"] = (child as Button).text
+			if control.has_meta("upgrade"):
+				entry["upgrade"] = control.get_meta("upgrade")
+			if control.has_meta("setting"):
+				entry["setting"] = control.get_meta("setting")
+			if child is BaseButton:
+				entry["disabled"] = (child as BaseButton).disabled
+			if child is BaseButton and (child as BaseButton).toggle_mode:
+				entry["pressed"] = (child as BaseButton).button_pressed
+			if child is Range:
+				entry["value"] = (child as Range).value
+			found.append(entry)
+		_collect_controls(child, found)

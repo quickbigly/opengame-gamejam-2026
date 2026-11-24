@@ -197,6 +197,7 @@ func finish_stage() -> Dictionary:
 		clean = _add_points(roundi(stage_points * CLEAN_BONUS))
 	var lives_gained := clampi(max_lives() - board.lives, 0, 1 + (1 if has("second_wind") else 0))
 	lives = board.lives + lives_gained
+	board.lives = lives  # the HUD behind the clear screen shows the board
 	_record_stage(true)
 	return {
 		"captures": capture_points,
@@ -273,6 +274,8 @@ func pick(index: int) -> String:
 
 	if id == "spare":
 		lives += 1
+		if board:
+			board.lives = lives  # shown in the HUD until the next stage starts
 	pending_levels = maxi(0, pending_levels - 1)
 	offer.clear()
 	return id

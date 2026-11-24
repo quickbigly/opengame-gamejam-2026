@@ -37,6 +37,10 @@ const ACTIVE_WALL_TIME := 0.8
 ## misclick: chance the click lands one cell off. segments: walls it considers per layout.
 ## tries: best walls it checks for safety each look. noise: how far its sense of a wall's worth
 ## wobbles (0.5 = ±50%). patience: seconds without a safe wall before it gambles on the best one.
+##
+## Persona profiles (docs/persona-playtest.md) add, all optional: fixed_walls: walls it builds in
+## the starting direction before it discovers turning; picks: how it chooses upgrades in the
+## balance report ("random", or "stack": what it already holds first, then the strongest).
 const TIERS := {
 	"novice": {"think": 0.35, "decide": [0.8, 2.0], "delay": [0.4, 0.9], "anticipate": 0.0, "horizon": 1.0, "bounces": 0,
 		"margin": 0.2, "misclick": 0.15, "segments": 12, "tries": 5, "noise": 0.5, "patience": 4.0},
@@ -44,6 +48,15 @@ const TIERS := {
 		"margin": 0.2, "misclick": 0.06, "segments": 24, "tries": 10, "noise": 0.25, "patience": 8.0},
 	"expert": {"think": 0.15, "decide": [0.25, 0.6], "delay": [0.2, 0.35], "anticipate": 0.8, "horizon": 2.5, "bounces": 2,
 		"margin": 0.35, "misclick": 0.02, "segments": 48, "tries": 16, "noise": 0.05, "patience": 20.0},
+	# P2, new to the genre: a novice's reads, and only horizontal walls until its fifth.
+	"newcomer": {"think": 0.4, "decide": [1.0, 2.5], "delay": [0.45, 1.0], "anticipate": 0.0, "horizon": 1.0, "bounces": 0,
+		"margin": 0.1, "misclick": 0.15, "segments": 12, "tries": 4, "noise": 0.6, "patience": 3.0, "fixed_walls": 4},
+	# P1, a judge in a hurry: average reads, but it barely waits for a safe gap.
+	"hurried": {"think": 0.25, "decide": [0.15, 0.5], "delay": [0.25, 0.5], "anticipate": 0.3, "horizon": 0.8, "bounces": 0,
+		"margin": 0.0, "misclick": 0.08, "segments": 24, "tries": 4, "noise": 0.3, "patience": 0.6},
+	# P3, a genre veteran: an expert's reads, and it stacks upgrades it already holds.
+	"minmaxer": {"think": 0.15, "decide": [0.25, 0.6], "delay": [0.2, 0.35], "anticipate": 0.8, "horizon": 2.5, "bounces": 2,
+		"margin": 0.35, "misclick": 0.02, "segments": 48, "tries": 16, "noise": 0.05, "patience": 20.0, "picks": "stack"},
 	"random": {"think": 0.6, "decide": [0.0, 0.0], "delay": [0.0, 0.0], "anticipate": 0.0, "horizon": 0.0, "bounces": 0,
 		"margin": 0.0, "misclick": 0.0, "segments": 0, "tries": 0, "noise": 0.0, "patience": 0.0},
 }
@@ -69,6 +82,14 @@ var tier_name: String
 var tier: Dictionary
 var rng := RandomNumberGenerator.new()
 var board: Board
+
+## Advise only (persona playtests): instead of acting on the board, the bot queues what it would
+## do in `advice`, and a browser test does it with real mouse clicks and keys. Each entry:
+## {id, kind: "wall", cell, vertical, cross} or {id, kind: "active", at}.
+var advise_only := false
+var advice: Array[Dictionary] = []
+var _advice_id := 0
+var _active_advised_at := -INF
 
 ## Looks taken, walls clicked, actives used and gambles taken, for the report.
 var looks := 0
@@ -118,7 +139,11 @@ func update() -> void:
 	var now := board.time
 	if not _plan.is_empty():
 		if now >= _plan["at"]:
-			if board.start_wall(_plan["cell"], _plan["vertical"], _plan["cross"]):
+			if advise_only:
+				_advise({"kind": "wall", "cell": _plan["cell"], "vertical": _plan["vertical"], "cross": _plan["cross"]})
+				clicks += 1
+				_next_look = now + _range(tier["decide"])
+			elif board.start_wall(_plan["cell"], _plan["vertical"], _plan["cross"]):
 				clicks += 1
 				_next_look = now + _range(tier["decide"])
 			else:
@@ -136,6 +161,28 @@ func update() -> void:
 		_click_randomly()
 	else:
 		_look()
+
+
+func _advise(entry: Dictionary) -> void:
+	_advice_id += 1
+	entry["id"] = _advice_id
+	advice.append(entry)
+	if advice.size() > 8:
+		advice.pop_front()
+
+
+## Fires the active at a cell, or advises it.
+func _use_active(cell: Vector2i) -> void:
+	var at := Vector2(cell) + Vector2(0.5, 0.5)
+	if advise_only:
+		if board.time - _active_advised_at < 1.0:
+			return  # still waiting for the last one to be fired
+		_active_advised_at = board.time
+		_advise({"kind": "active", "at": at})
+	else:
+		board.use_active(at)
+	actives_used += 1
+	_pred_version = -1
 
 
 func _range(bounds: Array) -> float:
@@ -168,7 +215,11 @@ func _look() -> void:
 
 	# Rank every known run of cells by what a wall on it would win, with this player's wobble.
 	var ranked: Array = []
+	# Past 15 s without a way through, even a newcomer tries the other button.
+	var straight_only: bool = clicks < tier.get("fixed_walls", 0) and board.time < 15.0
 	for segment in _segments:
+		if straight_only and (segment.vertical or segment.cross):
+			continue
 		var timing := _completion_time(segment, _origins(segment)[0])
 		var value := _value(segment, mini(lead + ceili(timing / SAMPLE_DT), _pred.size() - 1))
 		if is_nan(value):
@@ -189,9 +240,7 @@ func _look() -> void:
 			if board.can_start_wall(cell) and _safe(segment, origin, lead, horizon_samples):
 				_stuck_since = -1.0
 				if board.active_ready() and _completion_time(segment, origin) > ACTIVE_WALL_TIME:
-					board.use_active(Vector2(cell) + Vector2(0.5, 0.5))
-					actives_used += 1
-					_pred_version = -1
+					_use_active(cell)
 				_schedule(cell, segment.vertical, segment.cross)
 				return
 
@@ -202,9 +251,7 @@ func _look() -> void:
 	var best: Segment = ranked[0][1]
 	var best_cell := _origin_cell(best, _origins(best)[0])
 	if stuck >= ACTIVE_AFTER and board.active_ready():
-		board.use_active(Vector2(best_cell) + Vector2(0.5, 0.5))
-		actives_used += 1
-		_pred_version = -1
+		_use_active(best_cell)
 		_next_look = board.time  # look again straight away
 		return
 	if stuck >= tier["patience"] and board.can_start_wall(best_cell):

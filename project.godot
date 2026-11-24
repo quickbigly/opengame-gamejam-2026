@@ -24,6 +24,7 @@ config/icon="res://art/icon.png"
 
 Settings="*res://scripts/settings.gd"
 Audio="*res://scripts/audio.gd"
+TestHooks="*res://scripts/test_hooks.gd"
 
 [display]
 

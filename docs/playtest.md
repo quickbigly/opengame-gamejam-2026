@@ -2,6 +2,28 @@
 
 For M5 ([plan.md](plan.md)). Each session needs one person who hasn't played before and about 20 minutes. Run it locally or from the private OpenGame preview link.
 
+## What the persona playtests already settled
+
+Agents played the game as nine kinds of player first ([persona-results.md](persona-results.md)). Don't spend session time on these; they're checked by script on every build (`node run.mjs` in `tests/browser`):
+
+- keyboard-only menus;
+- reduced motion;
+- colour contrast of locked pens under five kinds of colour blindness;
+- saving across a reload;
+- a clean second run;
+- 700 random inputs without a crash;
+- the tip box never hiding a ball.
+
+Spend the sessions on what agents can't judge:
+
+- **Sound.** Nobody has heard it.
+- **Real difficulty.** Agents played on a paused clock. The newcomer bot loses on stage 1 in 27% of runs, while careful agents found stages 1–3 slow and easy. Which is it for a person?
+- **First impressions,** and these questions from the agents' findings:
+  - When a wall is still building, do they understand the grey "wall building" outline?
+  - Does the pulsing red outline (a ball is near a growing wall) help, or does it make the game too easy?
+  - Do they always know which way the next wall will grow?
+  - Does the tip box moving between the bottom and top of the field distract them?
+
 ## Before the session
 
 1. Export the web build with `dev -Web`. Serve it with `python -m http.server 5180 --directory build/web` and open http://localhost:5180 in Chrome or Firefox. Or use the private preview link once there is one.

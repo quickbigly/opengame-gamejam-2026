@@ -52,6 +52,11 @@ func set_value(key: String, new_value: Variant) -> void:
 	changed.emit()
 
 
+## A copy of every setting, for the test state.
+func values() -> Dictionary:
+	return _values.duplicate()
+
+
 func reduced_motion() -> bool:
 	return value("reduced_motion")
 
@@ -106,5 +111,6 @@ func _save() -> void:
 static func _system_prefers_reduced_motion() -> bool:
 	if not OS.has_feature("web"):
 		return false
-	var result: Variant = JavaScriptBridge.eval("window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches", true)
-	return result == true
+	var result: Variant = JavaScriptBridge.eval("window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 1 : 0", true)
+	# The web bridge hands a JS boolean back as a number, so compare as one (true == 1 is false).
+	return (result is int or result is float) and result != 0

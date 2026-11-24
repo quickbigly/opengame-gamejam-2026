@@ -25,6 +25,8 @@
 .EXAMPLE
     .\dev.ps1 -Web            # export the web build to build\web
 .EXAMPLE
+    .\dev.ps1 -WebTest        # export the test build (persona playtest hooks) to build\web-test
+.EXAMPLE
     .\dev.ps1 -Editor         # open the project in the Godot editor
 .EXAMPLE
     .\dev.ps1 -Godot --version   # run the Godot console binary with any arguments
@@ -39,6 +41,7 @@ param(
     [switch]$Sounds,
     [switch]$Shots,
     [switch]$Web,
+    [switch]$WebTest,
     [switch]$Editor,
     [switch]$Godot,
     [Parameter(ValueFromRemainingArguments = $true)]
@@ -68,7 +71,13 @@ $TemplatesSha512 = 'ca4d71c4d7b81dfc15d1a98baa07534aa95b03fdda78a0075b06672e1648
 $TemplatesDir = Join-Path $ToolsDir "export-templates-$GodotVersion"
 $WebTemplates = @('web_nothreads_debug.zip', 'web_nothreads_release.zip')
 $WebPreset = 'Web'
+# Exports go under build\, which holds a .gdignore so Godot never imports what's in it.
+$BuildDir = Join-Path $ProjectDir 'build'
 $WebDir = Join-Path $ProjectDir 'build\web'
+# The same game with the persona playtest hooks on (feature test_hooks; scripts/test_hooks.gd).
+$WebTestPreset = 'Web Test'
+$WebTestDir = Join-Path $ProjectDir 'build\web-test'
+$BuildIdFile = Join-Path $ProjectDir 'build_id.txt'
 
 
 function Invoke-Download {
@@ -163,7 +172,7 @@ function Update-ProjectCache {
     if (-not $stale) {
         $cacheTime = (Get-Item $cache).LastWriteTimeUtc
         $stale = [bool](Get-ChildItem -Path $ProjectDir -Recurse -Include *.gd, *.gdshader, *.tscn, *.tres, *.png, *.svg, *.wav, *.ogg, project.godot -File |
-            Where-Object { $_.FullName -notlike "$ToolsDir*" -and $_.LastWriteTimeUtc -gt $cacheTime } |
+            Where-Object { $_.FullName -notlike "$ToolsDir*" -and $_.FullName -notlike "$BuildDir*" -and $_.LastWriteTimeUtc -gt $cacheTime } |
             Select-Object -First 1)
     }
     if (-not $stale) {
@@ -182,20 +191,53 @@ function Update-ProjectCache {
 }
 
 
-# Exports the "Web" preset in export_presets.cfg to build\web.
-function Export-Web {
-    if (Test-Path $WebDir) {
-        Remove-Item $WebDir -Recurse -Force
+# The build id: the commit, with "-dirty" when the working tree has changes. The game shows it
+# in its state (window.boxedIn.build) and the receipt names it.
+function Get-BuildId {
+    $commit = (& git -C $ProjectDir rev-parse --short HEAD 2>$null)
+    if (-not $commit) {
+        return 'nogit'
     }
-    New-Item -ItemType Directory -Force $WebDir | Out-Null
-    Write-Host 'Exporting the web build...'
-    $output = & $GodotConsole --headless --path $ProjectDir --export-release $WebPreset (Join-Path $WebDir 'index.html') 2>&1
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $WebDir 'index.pck'))) {
+    $dirty = (& git -C $ProjectDir status --porcelain 2>$null)
+    if ($dirty) {
+        return "$commit-dirty"
+    }
+    return $commit
+}
+
+
+# Exports a preset in export_presets.cfg to a folder, with the build id baked in, then writes
+# receipt.json beside it: the build id and the SHA-256 of every file, so a test can prove the
+# server sent exactly this build.
+function Export-Preset {
+    param([string]$Preset, [string]$Dir)
+    if (Test-Path $Dir) {
+        Remove-Item $Dir -Recurse -Force
+    }
+    New-Item -ItemType Directory -Force $Dir | Out-Null
+    New-Item -ItemType File -Force (Join-Path $BuildDir '.gdignore') | Out-Null
+    $buildId = Get-BuildId
+    [System.IO.File]::WriteAllText($BuildIdFile, $buildId)
+    Write-Host "Exporting $Preset ($buildId)..."
+    $output = & $GodotConsole --headless --path $ProjectDir --export-release $Preset (Join-Path $Dir 'index.html') 2>&1
+    if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $Dir 'index.pck'))) {
         $output | Write-Host
-        throw "The web export failed (Godot exit code $LASTEXITCODE)."
+        throw "The $Preset export failed (Godot exit code $LASTEXITCODE)."
     }
-    $sizeMb = [math]::Round(((Get-ChildItem $WebDir -File | Measure-Object Length -Sum).Sum) / 1MB, 1)
-    Write-Host "Exported to $WebDir ($sizeMb MB)"
+    $files = [ordered]@{}
+    foreach ($file in Get-ChildItem $Dir -File | Sort-Object Name) {
+        $files[$file.Name] = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLower()
+    }
+    $receipt = [ordered]@{ build = $buildId; preset = $Preset; exported = (Get-Date).ToUniversalTime().ToString('o'); files = $files }
+    $json = $receipt | ConvertTo-Json -Depth 4
+    [System.IO.File]::WriteAllText((Join-Path $Dir 'receipt.json'), $json, (New-Object System.Text.UTF8Encoding $false))
+    $sizeMb = [math]::Round(((Get-ChildItem $Dir -File | Measure-Object Length -Sum).Sum) / 1MB, 1)
+    Write-Host "Exported to $Dir ($sizeMb MB)"
+}
+
+
+function Export-Web {
+    Export-Preset $WebPreset $WebDir
 }
 
 
@@ -214,6 +256,9 @@ if ($Setup) {
 } elseif ($Web) {
     Install-WebTemplates
     Export-Web
+} elseif ($WebTest) {
+    Install-WebTemplates
+    Export-Preset $WebTestPreset $WebTestDir
 } elseif ($Test) {
     & $GodotConsole --headless --path $ProjectDir --script res://tests/run_tests.gd
 } elseif ($Sounds) {

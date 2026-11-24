@@ -17,6 +17,10 @@ extends SceneTree
 ## A stage that runs this long in game time is counted as a stall (the bot gave up).
 const STAGE_TIME_CAP := 600.0
 const RUN_LOG := "user://runs.jsonl"
+## Strongest first, from docs/upgrade-strength.md: the order a "stack" picker prefers.
+const STRENGTH_ORDER := ["thick_air", "hardened_tip", "quick_build", "close_call", "spare",
+	"last_stretch", "study", "greed", "second_wind", "repel", "reroll", "twin_crews", "auto_lock",
+	"snug_reward", "chain", "stun", "shrink", "loose_fit", "crossbeam", "freeze"]
 
 var _runs := 20
 var _seed := 1000
@@ -153,10 +157,27 @@ func _play(tier: String, seed_value: int, start_upgrades := {}) -> Dictionary:
 				break
 			for id in run.offer:
 				_offered[id] = _offered.get(id, 0) + 1
-			var id := run.pick(picker.randi() % run.offer.size())
+			var id := run.pick(_choose(run, bot, picker))
 			_picked[id] = _picked.get(id, 0) + 1
 		run.advance()
 	return {}
+
+
+## Which offered upgrade the bot takes: at random, or for a "stack" picker, one it already holds
+## (the most stacked), else the strongest.
+func _choose(run: Run, bot: Bot, picker: RandomNumberGenerator) -> int:
+	if bot.tier.get("picks", "random") != "stack":
+		return picker.randi() % run.offer.size()
+	var best := 0
+	var best_key := -INF
+	for i in run.offer.size():
+		var id: String = run.offer[i]
+		var rank := STRENGTH_ORDER.find(id)
+		var key := run.stacks(id) * 100.0 - (rank if rank >= 0 else STRENGTH_ORDER.size())
+		if key > best_key:
+			best_key = key
+			best = i
+	return best
 
 
 func _summary(run: Run, victory: bool, stalled: bool, minutes: float, bot: Bot) -> Dictionary:
@@ -167,7 +188,8 @@ func _summary(run: Run, victory: bool, stalled: bool, minutes: float, bot: Bot) 
 	return result
 
 
-## Your own finished runs from the game's log, without staged starts, last entry per seed.
+## Your own finished runs from the game's log, without staged starts or persona playtests, last
+## entry per seed.
 func _load_real_runs() -> Array:
 	var by_seed := {}
 	var file := FileAccess.open(RUN_LOG, FileAccess.READ)
@@ -178,7 +200,8 @@ func _load_real_runs() -> Array:
 		if line == "":
 			continue
 		var entry = JSON.parse_string(line)
-		if entry is Dictionary and not entry.get("staged", false):
+		# Only people's runs: persona playtests log "persona:<id>" (older entries have no source).
+		if entry is Dictionary and not entry.get("staged", false) and entry.get("source", "human") == "human":
 			var minutes := 0.0
 			for stage in entry["stages"]:
 				minutes += stage["time"] / 60.0

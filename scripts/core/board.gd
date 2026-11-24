@@ -203,16 +203,26 @@ func pen_for_region(region: int) -> Pen:
 
 
 func can_start_wall(cell: Vector2i) -> bool:
-	if state != State.PLAYING or grid.is_filled(cell) or walls_building() >= max_walls:
-		return false
+	return start_blocker(cell) == ""
+
+
+## Why a wall can't start at a cell: "" if it can; "over" (the stage has ended), "filled",
+## "busy" (as many walls building as allowed), "wall" (a growing half is there) or "ball".
+func start_blocker(cell: Vector2i) -> String:
+	if state != State.PLAYING:
+		return "over"
+	if grid.is_filled(cell):
+		return "filled"
+	if walls_building() >= max_walls:
+		return "busy"
 	var rect := Rect2(cell, Vector2.ONE)
 	for half in halves:
 		if half.rect().intersects(rect):
-			return false
+			return "wall"
 	for ball in balls:
 		if ball.overlaps_rect(rect):
-			return false
-	return true
+			return "ball"
+	return ""
 
 
 ## The directions a wall's halves grow in. A cross (Crossbeam) grows all four ways.
@@ -354,15 +364,30 @@ func _capture(wall_id: int) -> void:
 				if region != Grid.Regions.NONE:
 					occupied[region] = true
 
-	var captured := PackedVector2Array()
+	# Fill every unoccupied region in one pass, and drop those cells from the regions, which
+	# then stay right for _update_pens (a capture only removes regions).
 	var region_count := 0
+	var empty := PackedByteArray()
+	empty.resize(regions.count())
 	for region in regions.count():
-		if occupied.has(region):
-			continue
-		var cells := regions.cells(region)
-		grid.fill_cells(cells)
-		captured.append_array(cells)
-		region_count += 1
+		if not occupied.has(region):
+			empty[region] = 1
+			region_count += 1
+	var captured := PackedVector2Array()
+	if region_count > 0:
+		var labels := regions.labels
+		var areas := regions.areas
+		for index in labels.size():
+			var region := labels[index]
+			if region != Grid.Regions.NONE and empty[region] == 1:
+				captured.append(Vector2(grid.cell_of(index)))
+				labels[index] = Grid.Regions.NONE
+		for region in areas.size():
+			if empty[region] == 1:
+				areas[region] = 0
+		regions.labels = labels
+		regions.areas = areas
+		grid.fill_cells(captured)
 	if region_count > 0:
 		captured_cells += captured.size()
 		if _wall_stats.has(wall_id):
@@ -375,7 +400,7 @@ func _capture(wall_id: int) -> void:
 		if half.is_growing() and grid.is_filled(half.origin) and grid.is_filled(half.origin + half.direction):
 			half.state = WallHalf.State.SOLID
 	_split_splitters()
-	_update_pens()
+	_update_pens(false)
 
 
 ## Splits each Splitter whose region has dropped below SPLIT_FRACTION of the field into two
@@ -414,8 +439,10 @@ func _finish_walls() -> void:
 		_events.append({"type": "wall_finished", "wall_id": id, "cells": stats["cells"], "regions": stats["regions"]})
 
 
-func _update_pens() -> void:
-	regions = grid.find_regions()
+## Re-measures the pens. `fresh`: find the regions again first (false when they're known current).
+func _update_pens(fresh := true) -> void:
+	if fresh:
+		regions = grid.find_regions()
 	pens.clear()
 	var by_region := {}
 	for ball in balls:
@@ -432,11 +459,25 @@ func _update_pens() -> void:
 		pen.weight += ball.weight
 		pen.balls.append(ball)
 
+	# Centroids: sum the cell centres of each region that holds a ball.
+	var wanted := PackedByteArray()
+	wanted.resize(regions.count())
+	for region in by_region:
+		wanted[region] = 1
+	var sum_x := PackedFloat64Array()
+	var sum_y := PackedFloat64Array()
+	sum_x.resize(regions.count())
+	sum_y.resize(regions.count())
+	var labels := regions.labels
+	var w := grid.width
+	for index in labels.size():
+		var region := labels[index]
+		if region != Grid.Regions.NONE and wanted[region] == 1:
+			sum_x[region] += index % w + 0.5
+			sum_y[region] += index / w + 0.5
 	var sums := {}
-	for index in regions.labels.size():
-		var region := regions.labels[index]
-		if by_region.has(region):
-			sums[region] = sums.get(region, Vector2.ZERO) + Vector2(grid.cell_of(index)) + Vector2(0.5, 0.5)
+	for region in by_region:
+		sums[region] = Vector2(sum_x[region], sum_y[region])
 
 	for pen in pens:
 		pen.limit = pen_limit_cells() * pen.weight

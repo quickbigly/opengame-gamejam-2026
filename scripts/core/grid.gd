@@ -84,30 +84,51 @@ func cell_of(index: int) -> Vector2i:
 
 
 ## Labels every open cell with the id of its region (4-connected flood fill).
+## It runs on every wall that sets, so it works on plain indices: the border is always filled
+## and nothing ever opens a cell, so an open cell's four neighbours are always on the grid.
 func find_regions() -> Regions:
 	var regions := Regions.new(self)
+	var labels := regions.labels  # local copy (packed arrays copy on write); stored back below
+	var areas := PackedInt32Array()
+	var cells := _cells
+	var w := width
 	var stack := PackedInt32Array()
-	for start in _cells.size():
-		if _cells[start] == FILLED or regions.labels[start] != Regions.NONE:
+	stack.resize(cells.size())
+	for start in cells.size():
+		if cells[start] == FILLED or labels[start] != Regions.NONE:
 			continue
-		var id := regions.areas.size()
+		var id := areas.size()
 		var area := 0
-		regions.labels[start] = id
-		stack.append(start)
-		while not stack.is_empty():
-			var index := stack[stack.size() - 1]
-			stack.resize(stack.size() - 1)
+		labels[start] = id
+		stack[0] = start
+		var top := 1
+		while top > 0:
+			top -= 1
+			var index := stack[top]
 			area += 1
-			var cell := cell_of(index)
-			for step in _NEIGHBOURS:
-				var next := cell + step
-				if is_filled(next):
-					continue
-				var next_index := index_of(next)
-				if regions.labels[next_index] == Regions.NONE:
-					regions.labels[next_index] = id
-					stack.append(next_index)
-		regions.areas.append(area)
+			var next := index + 1
+			if cells[next] == OPEN and labels[next] == Regions.NONE:
+				labels[next] = id
+				stack[top] = next
+				top += 1
+			next = index - 1
+			if cells[next] == OPEN and labels[next] == Regions.NONE:
+				labels[next] = id
+				stack[top] = next
+				top += 1
+			next = index + w
+			if cells[next] == OPEN and labels[next] == Regions.NONE:
+				labels[next] = id
+				stack[top] = next
+				top += 1
+			next = index - w
+			if cells[next] == OPEN and labels[next] == Regions.NONE:
+				labels[next] = id
+				stack[top] = next
+				top += 1
+		areas.append(area)
+	regions.labels = labels
+	regions.areas = areas
 	return regions
 
 

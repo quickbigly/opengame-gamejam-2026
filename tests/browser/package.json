@@ -1,0 +1,12 @@
+{
+  "name": "boxed-in-browser-tests",
+  "private": true,
+  "type": "module",
+  "description": "Persona playtests in a real browser (docs/persona-playtest.md).",
+  "scripts": {
+    "personas": "node run.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.65.0"
+  }
+}

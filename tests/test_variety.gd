@@ -132,9 +132,11 @@ func test_clearing_gives_lives_up_to_the_cap() -> void:
 	run.board.lives = Run.MAX_LIVES - 1
 	run.board.state = Board.State.CLEARED
 	check_equal(run.finish_stage()["lives_gained"], 1, "Second Wind still stops at the cap")
+	check_equal(run.board.lives, run.lives, "the HUD (the board) shows the lives just gained")
 	run.offer = ["spare", "greed", "study"]
 	run.pick(0)
 	check_equal(run.lives, Run.MAX_LIVES + 1, "Spare adds a life")
+	check_equal(run.board.lives, run.lives, "the HUD shows Spare's life at once")
 	check_equal(run.max_lives(), Run.MAX_LIVES + 1, "and raises the cap")
 
 

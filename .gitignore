@@ -2,6 +2,7 @@
 .godot/
 .tools/
 build/
+build_id.txt
 *.translation
 
 # OpenGame CLI state
@@ -13,3 +14,4 @@ build/
 .env.*
 .DS_Store
 Thumbs.db
+node_modules/

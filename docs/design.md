@@ -33,7 +33,12 @@ The genre and its core verb (grow walls to trap bouncing balls) are classic arca
 
 ### Building walls
 
-- **Left-click** an open cell to start a wall there. **Right-click** or **Space** switches between horizontal and vertical. The cursor always previews the wall's direction.
+- **Left-click** an open cell to start a wall there. **Right-click** or **Space** switches between horizontal and vertical.
+- The direction shows in three places: the hover preview, a mark beside the cursor over filled space, and the HUD's "turn now" line.
+- The preview shows the wall's whole path only when a click would build it.
+- While every crew is busy, the preview is a grey outline marked "wall building". On a ball or a growing wall, it's just the cell in red.
+- A refused click says why ("Wall still building", "A ball is in the way").
+- A growing half gets a pulsing outline while a free ball is within 2 cells of it (steady under reduced motion). The HUD shows the Hardened Tip and Close Call charges left this stage.
 - A wall grows from the click point in **both directions at once**, as two halves.
 - Each half grows until it reaches a filled cell, then turns solid.
 - **If a ball touches a half while it's still growing, that half breaks and you lose a life.** The other half keeps growing.
@@ -51,7 +56,7 @@ The genre and its core verb (grow walls to trap bouncing balls) are classic arca
 - A region that holds *k* balls is a **pen** when its area is **≤ k × the pen limit**. A shared pen is allowed, but it gets no extra room per ball.
 - A pen **locks**: it glows, its balls dim, and nothing more needs to happen there.
 - **The level clears when every ball is in a locked pen.** Captured percentage doesn't matter on its own.
-- Each region holding balls shows a meter of its area against its limit, so you always know how much more to cut.
+- Each region holding balls shows a meter of its area against its limit, so you always know how much more to cut. It sits at the open spot nearest the region's centre that is clear of every growing wall's path.
 
 ### Lives
 
@@ -105,7 +110,7 @@ Tuned on the balance bot (plan, M3; report in [balance.md](balance.md)). Stages 
 | Splitter | Splits into two Basics heading apart the first time its region shrinks below half the field |
 | Drifter | Its heading turns 0.5 rad/s (a turning circle wider than the field, so it always meets a wall), so straight-line reads lie |
 
-Each special ball has its own mark as well as its look (Swift: a trail; Big: a halo; Splitter: a line across; Drifter: a hollow centre), so kinds never read by colour alone. The stage intro names each kind in the stage and flags new ones.
+Each special ball has its own mark as well as its look (Swift: an arrowhead pointing where it's going, and a trail; Big: a halo; Splitter: a line across; Drifter: a hollow centre), so kinds never read by colour alone. The stage intro names each kind in the stage and flags new ones.
 
 ## 7. Upgrades
 
@@ -167,7 +172,7 @@ Title → Run start → Stage intro (balls, pen limit) → Play → Stage clear 
 
 ## 10. Look and Sound
 
-- **Look:** clean, flat, high-contrast shapes on a dark field with a soft additive glow on balls, growing walls and locked pens. Each wall half has its own colour (cyan for the half growing left or up, orange for right or down) with a bright tip. Open space has a rim where it meets a wall; a locked pen's rim turns green. The title is the game's name built from cells, with a box around "IN". State never relies on colour alone: growing walls have stripes that move outward, locked pens get a green rim, a padlock and a full meter bar, and each ball kind has its own mark. The colour-blind palette (Okabe–Ito) swaps red and green for vermilion, blue and yellow.
+- **Look:** clean, flat, high-contrast shapes on a dark field with a soft additive glow on balls, growing walls and locked pens. Each wall half has its own colour (cyan for the half growing left or up, orange for right or down) with a bright tip. Open space has a rim where it meets a wall; a locked pen's rim turns green. The title is the game's name built from cells, with a box around "IN". State never relies on colour alone: growing walls have stripes that move outward, locked pens get a green rim, a padlock and a full meter bar, boxed balls get a dark ring, and each ball kind has its own mark. A locking pen pulses brighter in its own colour, never toward the ball's colour. Menu focus is a thick outline in the text colour; a switch that's on is a tinted fill. Upgrade rarity strips get thicker as well as changing colour. The colour-blind palette (Okabe–Ito) swaps red and green for vermilion, blue and yellow.
 - **HUD:** stage, score, lives as pips and the XP bar across the top; the limit and the boxed count under them. Left of the field: the controls, Crossbeam's key and the active ability (Q, its charge as segments). Right: the ball kinds in play. Each pen shows area / limit with a bar.
 - **Feel:** a white flash and glow along a half when it sets (snap), a sweep that lights captured cells outward from where the wall started, then fades into wall colour; a 90 ms hit-stop, a 7 px shake, a red border pulse and flying shards when a wall breaks; a pulse and a ring when a pen locks; floating score and combo text; a burst on level-up and on clear. Reduced motion turns off shake, rings, particles, moving stripes and the sweep's stagger. The full-screen flash is capped at 14% red, a luminance step of about 0.04.
 - **Sound:** synthesised by `dev -Sounds` (`scripts/dev/make_sounds.gd`, sine, triangle and filtered noise, seeded): 19 effects (interface move/select/back, wall start, turn, blocked, snap, capture, break, shield, lock, split, freeze, repel, level-up, clear, game over, victory, pick) and two loops (menu, 32 s, pads and bells; play, 40 s at 96 BPM, pads, bass, plucked arpeggio, soft kick, hats and a bell line in the second half). Effects vary in pitch by ±2.5%; captures pitch down as they get bigger; each pen that locks in a stage chimes a step higher on a pentatonic scale. Buses: Music and SFX into Master. All are made by us. The sponsor tools (ElevenLabs, fal, Meshy) are out of scope unless we decide otherwise. **Nobody has listened to them yet; levels were set by meter.**
